@@ -1,0 +1,882 @@
+'use client';
+import { useState, useRef } from 'react';
+
+const CHAR_LIMITS = {
+  'Airbnb': 50, 'VRBO': 75, 'Booking.com': 60, 'TripAdvisor': 80,
+  'Google Vacation Rentals': 100, 'Hipcamp': 60, 'Expedia': 120,
+  'Hotels.com': 100, 'Agoda': 80, 'Kayak': 90,
+  'Homes & Villas by Marriott': 100, 'Plum Guide': 60, 'Houfy': 75,
+  'Vacasa': 80, 'Evolve': 75, 'Furnished Finder': 80,
+  'Glamping Hub': 60, "Misterb&b": 75,
+};
+
+const OTA_META = {
+  'Airbnb': { icon: '🏠', color: 'airbnb' },
+  'VRBO': { icon: '🌴', color: 'vrbo' },
+  'Booking.com': { icon: '🔵', color: 'booking' },
+  'TripAdvisor': { icon: '🦉', color: 'tripadvisor' },
+  'Google Vacation Rentals': { icon: '🔍', color: 'google' },
+  'Hipcamp': { icon: '🏕️', color: 'hipcamp' },
+  'Expedia': { icon: '🏨', color: 'expedia' },
+  'Hotels.com': { icon: '🏩', color: 'hotelscom' },
+  'Agoda': { icon: '🌐', color: 'agoda' },
+  'Kayak': { icon: '🔎', color: 'kayak' },
+  'Homes & Villas by Marriott': { icon: '🏅', color: 'marriott' },
+  'Plum Guide': { icon: '✨', color: 'plumguide' },
+  'Houfy': { icon: '🏡', color: 'houfy' },
+  'Vacasa': { icon: '🏘️', color: 'vacasa' },
+  'Evolve': { icon: '🔑', color: 'evolve' },
+  'Furnished Finder': { icon: '🛋️', color: 'furnishedfinder' },
+  'Glamping Hub': { icon: '⛺', color: 'glampinghub' },
+  "Misterb&b": { icon: '🌈', color: 'misterbnb' },
+};
+
+const ALL_OTAS = Object.keys(CHAR_LIMITS);
+const POPULAR_OTAS = ['Airbnb', 'VRBO', 'Booking.com', 'TripAdvisor'];
+
+const FEATURES = [
+  { id: 'ota', icon: '📰', name: 'OTA Headlines', desc: '10 variations per platform' },
+  { id: 'otadesc', icon: '📝', name: 'OTA Descriptions', desc: 'Full body copy per platform' },
+  { id: 'photos', icon: '📸', name: 'Photo Descriptions', desc: 'Room-by-room captions' },
+  { id: 'pricing', icon: '💰', name: 'Pricing Intelligence', desc: 'Market rates & suggestions' },
+  { id: 'rules', icon: '📋', name: 'House Rules & FAQ', desc: 'Auto-generated policies' },
+  { id: 'seo', icon: '🔍', name: 'SEO & Keywords', desc: 'Keywords & meta tags' },
+  { id: 'market', icon: '📊', name: 'Market Intel', desc: 'Competitor & seasonal rates' },
+  { id: 'audit', icon: '🩺', name: 'Listing Auditor', desc: 'Health score & fix suggestions' },
+];
+
+async function callAI(messages, maxTokens = 6000) {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: maxTokens, messages }),
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || 'API error');
+  const text = (data.content || []).map(b => b.text || '').join('').trim();
+
+  // Robust JSON extraction
+  for (const strategy of [
+    t => JSON.parse(t),
+    t => JSON.parse(t.substring(t.indexOf('{'), t.lastIndexOf('}') + 1)),
+    t => JSON.parse(t.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()),
+    t => { const m = t.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : null; },
+  ]) {
+    try { const r = strategy(text); if (r) return r; } catch {}
+  }
+  throw new Error('Could not parse AI response. Please try again.');
+}
+
+export default function ToolSection() {
+  const [url, setUrl] = useState('');
+  const [selectedFeatures, setSelectedFeatures] = useState(new Set());
+  const [selectedOTAs, setSelectedOTAs] = useState(new Set());
+  const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState('');
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+  const [activeTab, setActiveTab] = useState('ota');
+  const [auditUrl, setAuditUrl] = useState('');
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditResult, setAuditResult] = useState(null);
+  const fileRef = useRef();
+
+  const toggleFeature = (id) => {
+    setSelectedFeatures(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const toggleOTA = (name) => {
+    setSelectedOTAs(prev => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
+      return next;
+    });
+  };
+
+  const analyze = async () => {
+    if (!url) return setError('Please paste a property URL.');
+    if (selectedFeatures.size === 0) return setError('Please select at least one feature.');
+    if (selectedFeatures.has('ota') && selectedOTAs.size === 0) return setError('Please select at least one OTA platform.');
+
+    setLoading(true);
+    setError('');
+    setResult(null);
+
+    try {
+      // STEP 1: Scrape the real website
+      setLoadingStep('🔍 Scanning website...');
+      let scrapedContext = '';
+      let scrapedImages = [];
+      try {
+        const scrapeRes = await fetch('/api/scrape', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const scraped = await scrapeRes.json();
+        if (scraped.success && scraped.text) {
+          scrapedContext = `REAL WEBSITE DATA FROM ${url}:
+Title: ${scraped.title}
+Description: ${scraped.metaDescription}
+Page Content: ${scraped.text}
+
+IMPORTANT: Use ONLY this real data. Do NOT make up property details.`;
+          scrapedImages = scraped.images || [];
+        }
+      } catch { /* scrape failed, continue */ }
+
+      // STEP 2: Get property info + non-OTA sections
+      setLoadingStep('🏠 Analyzing property details...');
+      const wantPhotos = selectedFeatures.has('photos');
+      const wantPricing = selectedFeatures.has('pricing');
+      const wantRules = selectedFeatures.has('rules');
+      const wantSEO = selectedFeatures.has('seo');
+      const wantMarket = selectedFeatures.has('market');
+      const wantOTA = selectedFeatures.has('ota') || selectedFeatures.has('otadesc');
+
+      const mainPrompt = `You are an expert vacation rental copywriter.
+${scrapedContext}
+URL: ${url}
+
+Extract real property details and generate ONLY the requested sections.
+
+Return ONLY valid JSON starting with { and ending with }:
+{
+  "property": {
+    "title": "exact property name from the listing",
+    "address": "exact city, state from the listing",
+    "type": "property type",
+    "bedrooms": 0,
+    "bathrooms": 0,
+    "guests": 0,
+    "sqft": 0,
+    "highlights": ["real highlight 1", "real highlight 2", "real highlight 3"],
+    "nearbyAttractions": ["real nearby place 1", "real nearby place 2", "real nearby place 3"]
+  }
+  ${wantPhotos ? `,"photos": [
+    {"room":"Living Room","emoji":"🛋️","description":"2-3 sentence description based on real listing"},
+    {"room":"Master Bedroom","emoji":"🛏️","description":"description"},
+    {"room":"Kitchen","emoji":"🍳","description":"description"},
+    {"room":"Bathroom","emoji":"🚿","description":"description"},
+    {"room":"Outdoor Space","emoji":"🌿","description":"description"},
+    {"room":"View","emoji":"🌅","description":"description"}
+  ]` : ''}
+  ${wantPricing ? `,"pricing": {
+    "platforms": [
+      {"name":"Airbnb","low":0,"high":0,"avg":0,"occupancy":"0%"},
+      {"name":"VRBO","low":0,"high":0,"avg":0,"occupancy":"0%"},
+      {"name":"Booking.com","low":0,"high":0,"avg":0,"occupancy":"0%"},
+      {"name":"Direct Book","low":0,"high":0,"avg":0,"occupancy":"0%"}
+    ],
+    "notes":"pricing strategy based on location",
+    "seasonalTip":"seasonal advice",
+    "weekendPremium":"15-20%"
+  }` : ''}
+  ${wantRules ? `,"rules": {
+    "checkIn":"4:00 PM","checkOut":"11:00 AM",
+    "items":[
+      {"icon":"🚭","rule":"No smoking anywhere on the property"},
+      {"icon":"🐾","rule":"Pet policy based on listing"},
+      {"icon":"🎉","rule":"No parties without written approval"},
+      {"icon":"🔇","rule":"Quiet hours 10 PM - 8 AM"},
+      {"icon":"🔑","rule":"Self check-in via smart lock"},
+      {"icon":"🧹","rule":"Basic cleaning required on checkout"},
+      {"icon":"👥","rule":"Maximum occupancy strictly enforced"},
+      {"icon":"🚗","rule":"Parking details from listing"}
+    ],
+    "faq":[
+      {"q":"Is WiFi fast enough for remote work?","a":"based on listing details"},
+      {"q":"Are there nearby grocery stores?","a":"based on location"},
+      {"q":"What is included in the kitchen?","a":"based on listing"},
+      {"q":"Is there a minimum stay?","a":"based on listing"},
+      {"q":"Can I get early check-in?","a":"We accommodate when possible — message 48h ahead."},
+      {"q":"Is the property accessible?","a":"based on listing"}
+    ]
+  }` : ''}
+  ${wantSEO ? `,"seo": {
+    "primaryKeywords":["kw1","kw2","kw3","kw4","kw5"],
+    "longTailKeywords":["lt1","lt2","lt3","lt4"],
+    "localKeywords":["loc1","loc2","loc3"],
+    "titleTag":"SEO title under 60 chars",
+    "metaDescription":"Meta description under 155 chars",
+    "tips":["tip1","tip2","tip3"]
+  }` : ''}
+  ${wantMarket ? `,"market": {
+    "yourRate":{"low":0,"high":0,"avg":0},
+    "marketAvg":{"low":0,"high":0,"avg":0},
+    "competitorRange":{"low":0,"high":0},
+    "position":"market position analysis",
+    "byBedroom":[
+      {"bedrooms":1,"marketAvg":0,"suggested":0},
+      {"bedrooms":2,"marketAvg":0,"suggested":0},
+      {"bedrooms":3,"marketAvg":0,"suggested":0},
+      {"bedrooms":4,"marketAvg":0,"suggested":0},
+      {"bedrooms":5,"marketAvg":0,"suggested":0}
+    ],
+    "seasonal":[
+      {"period":"Peak Summer (Jun-Aug)","multiplier":1.4,"suggestedRate":0,"notes":"peak demand"},
+      {"period":"Spring Break (Mar-Apr)","multiplier":1.25,"suggestedRate":0,"notes":"family surge"},
+      {"period":"Holiday Season (Nov-Dec)","multiplier":1.35,"suggestedRate":0,"notes":"premium rates"},
+      {"period":"Shoulder Season","multiplier":0.9,"suggestedRate":0,"notes":"slight reduction"},
+      {"period":"Low Season (Jan-Feb)","multiplier":0.7,"suggestedRate":0,"notes":"offer discounts"}
+    ],
+    "occasions":[
+      {"occasion":"New Years Eve","premium":"2.5x","suggestedRate":0,"minStay":3,"tip":"book 2-3 months out"},
+      {"occasion":"Memorial Day Weekend","premium":"1.6x","suggestedRate":0,"minStay":3,"tip":"first big summer weekend"},
+      {"occasion":"4th of July","premium":"1.7x","suggestedRate":0,"minStay":3,"tip":"price aggressively"},
+      {"occasion":"Labor Day Weekend","premium":"1.5x","suggestedRate":0,"minStay":3,"tip":"last summer hurrah"},
+      {"occasion":"Local Festivals","premium":"1.3-2x","suggestedRate":0,"minStay":2,"tip":"monitor event calendar"}
+    ],
+    "weekly":{"discount":"10-15%","suggestedWeekly":0,"tip":"increases occupancy 20-30%"},
+    "monthly":{"discount":"25-35%","suggestedMonthly":0,"tip":"eliminates turnover costs"},
+    "revenueProjection":{"conservative":0,"moderate":0,"optimistic":0,"topTip":"dynamic pricing tip"}
+  }` : ''}
+}`;
+
+      const mainResult = await callAI([{ role: 'user', content: mainPrompt }]);
+
+      // STEP 3: OTA Headlines + Descriptions (batched)
+      let otas = [];
+      if (wantOTA && selectedOTAs.size > 0) {
+        setLoadingStep('✍️ Writing platform copy...');
+        const otaList = [...selectedOTAs];
+        const nearby = (mainResult.property?.nearbyAttractions || []).join(', ');
+        const propInfo = `Property: ${mainResult.property?.title || 'Vacation Rental'}
+Location: ${mainResult.property?.address || url}
+Type: ${mainResult.property?.type || 'vacation rental'}, ${mainResult.property?.bedrooms || 0} bedrooms, ${mainResult.property?.guests || 0} guests
+Nearby attractions: ${nearby || 'local area attractions'}
+${scrapedContext ? 'Use the real property data from the scraped listing.' : ''}`;
+
+        const batchSize = 5;
+        const batches = [];
+        for (let i = 0; i < otaList.length; i += batchSize) {
+          batches.push(otaList.slice(i, i + batchSize));
+        }
+
+        const batchPromises = batches.map(batch => {
+          const limitsText = batch.map(p => `- ${p}: MAX ${CHAR_LIMITS[p]} chars`).join('\n');
+          const template = batch.map(p => `{"platform":"${p}","icon":"${OTA_META[p]?.icon || '🏠'}","charLimit":${CHAR_LIMITS[p]},"headlines":["headline 1","headline 2","headline 3","headline 4","headline 5","headline 6","headline 7","headline 8","headline 9","headline 10"],"shortDesc":"2-sentence hook","fullBody":"Full 4-5 sentence listing description","tags":["tag1","tag2","tag3"]}`).join(',\n');
+
+          const prompt = `You are an expert vacation rental copywriter.
+${propInfo}
+
+Write OTA listings for ONLY these ${batch.length} platforms: ${batch.join(', ')}.
+
+STRICT CHARACTER LIMITS — every headline MUST be within limit:
+${limitsText}
+
+For each platform write 10 DIFFERENT headline variations. Each must be unique.
+Use nearby attractions and location keywords in headlines.
+
+Return ONLY valid JSON:
+{"otas": [
+${template}
+]}`;
+
+          return callAI([{ role: 'user', content: prompt }]);
+        });
+
+        setLoadingStep('⚡ Generating all platforms in parallel...');
+        const batchResults = await Promise.all(batchPromises);
+        otas = batchResults.flatMap(r => r.otas || []);
+      }
+
+      setResult({ ...mainResult, otas, scrapedImages });
+      setActiveTab(selectedFeatures.has('ota') ? 'ota' : [...selectedFeatures][0]);
+      setLoadingStep('');
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      setLoadingStep('');
+    }
+  };
+
+  const runAudit = async () => {
+    const auditTarget = auditUrl || url;
+    if (!auditTarget) return;
+    setAuditLoading(true);
+    setAuditResult(null);
+    try {
+      // Scrape audit target
+      let auditContext = '';
+      try {
+        const r = await fetch('/api/scrape', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: auditTarget }) });
+        const s = await r.json();
+        if (s.success) auditContext = `Title: ${s.title}\nDescription: ${s.metaDescription}\nContent: ${s.text}`;
+      } catch {}
+
+      const prompt = `You are a vacation rental listing auditor.
+URL: ${auditTarget}
+${auditContext ? `REAL LISTING DATA:\n${auditContext}` : ''}
+
+Audit this listing and return ONLY valid JSON:
+{
+  "score": 0,
+  "grade": "B",
+  "verdict": "one line verdict",
+  "summary": "2-3 sentence summary",
+  "categories": [
+    {"name":"Headline & Title","icon":"✍️","score":0,"issues":[
+      {"type":"error","text":"issue description","fix":"how to fix"}
+    ]},
+    {"name":"Description Quality","icon":"📝","score":0,"issues":[]},
+    {"name":"Photo Coverage","icon":"📸","score":0,"issues":[]},
+    {"name":"SEO & Discoverability","icon":"🔍","score":0,"issues":[]},
+    {"name":"Trust & Conversion","icon":"⭐","score":0,"issues":[]},
+    {"name":"Pricing & Value","icon":"💰","score":0,"issues":[]}
+  ],
+  "topFixes": [
+    {"priority":"high","title":"fix title","description":"why it matters","suggestion":"example fix"}
+  ]
+}`;
+
+      const data = await callAI([{ role: 'user', content: prompt }]);
+      setAuditResult(data);
+    } catch (err) {
+      setAuditResult({ error: err.message });
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const copy = (text) => navigator.clipboard.writeText(text);
+
+  const s = {
+    // Styles object
+    section: { background: '#f5f5f7', padding: '80px 48px' },
+    inner: { maxWidth: 800, margin: '0 auto' },
+    label: { fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 3, fontWeight: 600, color: '#6e6e73', marginBottom: 20 },
+    card: { background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 12, overflow: 'hidden', marginBottom: 16 },
+    cardHeader: { padding: '14px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fafaf8' },
+    cardBody: { padding: 20 },
+    btn: { padding: '10px 20px', border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.82rem', fontWeight: 600, transition: 'all 0.2s' },
+    input: { width: '100%', padding: '14px 18px', border: '1px solid rgba(0,0,0,0.12)', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.9rem', outline: 'none' },
+    textarea: { width: '100%', border: '1px solid transparent', borderRadius: 6, padding: 8, fontFamily: 'inherit', fontSize: '0.83rem', lineHeight: 1.6, resize: 'vertical', background: 'transparent', color: '#1d1d1f' },
+  };
+
+  const activeFeatures = [...selectedFeatures];
+
+  return (
+    <section id="tool" style={{ background: '#f5f5f7', padding: '100px 24px 80px', borderTop: '0.5px solid rgba(0,0,0,0.08)' }}>
+      <div style={{ maxWidth: 800, margin: '0 auto' }}>
+
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: 48 }}>
+          <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: '#c9a84c', marginBottom: 12 }}>Try it now — free</div>
+          <h2 style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', fontWeight: 800, letterSpacing: '-0.03em', color: '#1d1d1f', marginBottom: 12 }}>
+            Paste a URL.<br />Get everything.
+          </h2>
+          <p style={{ fontSize: '1rem', color: '#6e6e73', lineHeight: 1.7 }}>
+            VR365 scans the real listing, reads the property details, and generates publish-ready copy for every platform you select.
+          </p>
+        </div>
+
+        {/* URL Input */}
+        <div style={{ display: 'flex', border: '2px solid #1d1d1f', borderRadius: 8, overflow: 'hidden', background: 'white', marginBottom: 16, boxShadow: '0 0 0 0 #c9a84c', transition: 'box-shadow 0.2s' }}>
+          <input
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && analyze()}
+            placeholder="Paste any property URL — Airbnb, VRBO, your own website..."
+            style={{ flex: 1, padding: '16px 20px', border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: '0.95rem', color: '#1d1d1f' }}
+          />
+        </div>
+
+        {/* Feature Selector */}
+        <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+          <div style={{ padding: '12px 18px', borderBottom: '1px solid rgba(0,0,0,0.06)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: '#6e6e73' }}>
+            What do you want to generate?
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'rgba(0,0,0,0.05)' }}>
+            {FEATURES.map(f => {
+              const active = selectedFeatures.has(f.id);
+              return (
+                <div key={f.id} onClick={() => toggleFeature(f.id)}
+                  style={{ background: active ? '#fffdf5' : 'white', padding: '14px 12px', cursor: 'pointer', position: 'relative', transition: 'background 0.15s' }}>
+                  <div style={{ fontSize: '1.4rem', marginBottom: 6, opacity: active ? 1 : 0.35 }}>{f.icon}</div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, color: active ? '#1d1d1f' : '#6e6e73', marginBottom: 3 }}>{f.name}</div>
+                  <div style={{ fontSize: '0.68rem', color: '#86868b', lineHeight: 1.4 }}>{f.desc}</div>
+                  {active && <div style={{ position: 'absolute', top: 8, right: 8, width: 18, height: 18, borderRadius: '50%', background: '#c9a84c', color: 'white', fontSize: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>✓</div>}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ padding: '10px 18px', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.78rem', color: '#6e6e73' }}>{selectedFeatures.size} of 8 selected</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[['All', () => setSelectedFeatures(new Set(FEATURES.map(f => f.id)))], ['Clear', () => setSelectedFeatures(new Set())]].map(([label, fn]) => (
+                <button key={label} onClick={fn} style={{ padding: '4px 12px', borderRadius: 20, border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', fontFamily: 'inherit', fontSize: '0.72rem', fontWeight: 600, color: '#6e6e73', cursor: 'pointer' }}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* OTA Platform Selector - shows when OTA features selected */}
+        {(selectedFeatures.has('ota') || selectedFeatures.has('otadesc')) && (
+          <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+            <div style={{ padding: '12px 18px', borderBottom: '1px solid rgba(0,0,0,0.06)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: '#6e6e73' }}>
+              Which platforms?
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'rgba(0,0,0,0.05)' }}>
+              {ALL_OTAS.map(name => {
+                const active = selectedOTAs.has(name);
+                return (
+                  <div key={name} onClick={() => toggleOTA(name)}
+                    style={{ background: active ? '#fffdf5' : 'white', padding: '10px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, position: 'relative', transition: 'background 0.15s' }}>
+                    <span style={{ fontSize: '1.1rem', opacity: active ? 1 : 0.4 }}>{OTA_META[name]?.icon}</span>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: active ? '#1d1d1f' : '#6e6e73' }}>{name}</div>
+                      <div style={{ fontSize: '0.62rem', color: '#c9a84c', fontWeight: 700 }}>{CHAR_LIMITS[name]} chars</div>
+                    </div>
+                    {active && <div style={{ position: 'absolute', top: 6, right: 8, fontSize: '0.65rem', fontWeight: 900, color: '#c9a84c' }}>✓</div>}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ padding: '10px 18px', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.78rem', color: '#6e6e73' }}>{selectedOTAs.size} of 18 selected</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[['All', () => setSelectedOTAs(new Set(ALL_OTAS))], ['Popular 4', () => setSelectedOTAs(new Set(POPULAR_OTAS))], ['Clear', () => setSelectedOTAs(new Set())]].map(([label, fn]) => (
+                  <button key={label} onClick={fn} style={{ padding: '4px 12px', borderRadius: 20, border: '1px solid rgba(0,0,0,0.12)', background: 'transparent', fontFamily: 'inherit', fontSize: '0.72rem', fontWeight: 600, color: '#6e6e73', cursor: 'pointer' }}>{label}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Analyze Button */}
+        <button onClick={analyze} disabled={loading}
+          style={{ width: '100%', padding: 16, background: loading ? '#bbb' : '#1d1d1f', color: 'white', border: 'none', borderRadius: 8, fontFamily: 'inherit', fontSize: '1rem', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', marginBottom: 8, transition: 'all 0.2s' }}>
+          {loading ? loadingStep || 'Analyzing...' : selectedFeatures.size === 0 ? 'Select features above →' : `Generate: ${[...selectedFeatures].map(f => FEATURES.find(x => x.id === f)?.name).filter(Boolean).join(' · ')} →`}
+        </button>
+
+        <div style={{ textAlign: 'center', fontSize: '0.75rem', color: '#86868b', marginBottom: 8 }}>
+          Works with <strong>Airbnb</strong> · <strong>VRBO</strong> · <strong>Zillow</strong> · <strong>Realtor.com</strong> · <strong>Any URL</strong>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div style={{ background: '#fff5f5', border: '1px solid #ffcccc', borderRadius: 8, padding: 20, textAlign: 'center', marginTop: 16 }}>
+            <div style={{ fontWeight: 700, color: '#c62828', marginBottom: 4 }}>⚠️ Something went wrong</div>
+            <div style={{ fontSize: '0.85rem', color: '#6e6e73' }}>{error}</div>
+          </div>
+        )}
+
+        {/* Results */}
+        {result && (
+          <div style={{ marginTop: 32 }}>
+
+            {/* Property Header */}
+            <div style={{ background: '#1d1d1f', color: 'white', borderRadius: 12, padding: '32px 36px', marginBottom: 24 }}>
+              <h2 style={{ fontSize: '1.8rem', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 6 }}>{result.property?.title}</h2>
+              <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>{result.property?.address} · {result.property?.type}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {[`${result.property?.bedrooms} bed`, `${result.property?.bathrooms} bath`, `${result.property?.guests} guests`, ...(result.property?.highlights || []).slice(0, 2)].map((b, i) => (
+                  <span key={i} style={{ padding: '4px 12px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 500, background: i === 0 ? '#c9a84c' : 'rgba(255,255,255,0.1)', color: i === 0 ? '#000' : 'rgba(255,255,255,0.8)' }}>{b}</span>
+                ))}
+              </div>
+              {result.property?.nearbyAttractions?.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 2, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>📍 Nearby used in headlines</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {result.property.nearbyAttractions.map((a, i) => (
+                      <span key={i} style={{ fontSize: '0.72rem', padding: '2px 10px', borderRadius: 20, background: 'rgba(201,168,76,0.2)', color: 'rgba(255,255,255,0.7)' }}>{a}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid rgba(0,0,0,0.08)', marginBottom: 24, overflowX: 'auto' }}>
+              {FEATURES.filter(f => selectedFeatures.has(f.id)).map(f => (
+                <button key={f.id} onClick={() => setActiveTab(f.id)}
+                  style={{ padding: '10px 18px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.83rem', fontWeight: activeTab === f.id ? 600 : 400, color: activeTab === f.id ? '#c9a84c' : '#6e6e73', borderBottom: activeTab === f.id ? '2px solid #c9a84c' : '2px solid transparent', marginBottom: -2, whiteSpace: 'nowrap', transition: 'all 0.2s' }}>
+                  {f.icon} {f.name}
+                </button>
+              ))}
+              {selectedFeatures.has('audit') && (
+                <button onClick={() => setActiveTab('audit')}
+                  style={{ padding: '10px 18px', border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.83rem', fontWeight: activeTab === 'audit' ? 600 : 400, color: activeTab === 'audit' ? '#c9a84c' : '#6e6e73', borderBottom: activeTab === 'audit' ? '2px solid #c9a84c' : '2px solid transparent', marginBottom: -2, whiteSpace: 'nowrap' }}>
+                  🩺 Listing Auditor
+                </button>
+              )}
+            </div>
+
+            {/* OTA HEADLINES TAB */}
+            {activeTab === 'ota' && (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+                  {(result.otas || []).map((ota, oi) => {
+                    const headlines = Array.isArray(ota.headlines) ? ota.headlines : ota.headline ? [ota.headline] : [];
+                    const limit = ota.charLimit || CHAR_LIMITS[ota.platform] || 50;
+                    return (
+                      <div key={oi} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, overflow: 'hidden' }}>
+                        <div style={{ padding: '14px 18px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: '#fafaf8', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: '0.9rem' }}>
+                            <span>{ota.icon}</span>{ota.platform}
+                          </div>
+                          <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '3px 8px', borderRadius: 10, background: 'rgba(201,168,76,0.12)', color: '#c9a84c' }}>Max {limit} chars</span>
+                        </div>
+                        <div style={{ padding: 16 }}>
+                          {headlines.length === 0 ? (
+                            <div style={{ color: '#86868b', fontSize: '0.83rem' }}>No headlines generated</div>
+                          ) : headlines.map((h, hi) => {
+                            const len = h.length;
+                            const over = len > limit;
+                            const near = len >= limit * 0.9;
+                            const cc = over ? '#c62828' : near ? '#f57f17' : '#34c759';
+                            return (
+                              <div key={hi} style={{ marginBottom: 10, padding: 10, background: '#f9f9f9', borderRadius: 6, border: `1px solid ${over ? '#ffcccc' : 'rgba(0,0,0,0.06)'}` }}>
+                                <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                                  <span style={{ fontSize: '0.62rem', fontWeight: 700, color: '#86868b', flexShrink: 0, marginTop: 2 }}>#{hi + 1}</span>
+                                  <div style={{ flex: 1, fontSize: '0.85rem', fontWeight: 600, color: '#1d1d1f', lineHeight: 1.4 }}>{h}</div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ flex: 1, height: 3, background: 'rgba(0,0,0,0.08)', borderRadius: 2 }}>
+                                    <div style={{ height: '100%', width: `${Math.min(100, (len / limit) * 100)}%`, background: cc, borderRadius: 2 }} />
+                                  </div>
+                                  <span style={{ fontSize: '0.65rem', fontWeight: 700, color: cc }}>{len}/{limit}</span>
+                                  <button onClick={() => copy(h)} style={{ padding: '2px 8px', border: '1px solid rgba(0,0,0,0.1)', background: 'white', borderRadius: 4, fontFamily: 'inherit', fontSize: '0.68rem', cursor: 'pointer' }}>Copy</button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {headlines.length > 0 && (
+                            <button onClick={() => copy(headlines.map((h, i) => `${i + 1}. ${h}`).join('\n'))}
+                              style={{ width: '100%', padding: '8px', border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', marginTop: 4 }}>
+                              Copy all {headlines.length} headlines
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* OTA DESCRIPTIONS TAB */}
+            {activeTab === 'otadesc' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+                {(result.otas || []).map((ota, oi) => (
+                  <div key={oi} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, overflow: 'hidden' }}>
+                    <div style={{ padding: '14px 18px', borderBottom: '1px solid rgba(0,0,0,0.06)', background: '#fafaf8', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: '0.9rem' }}>
+                      <span>{ota.icon}</span>{ota.platform}
+                    </div>
+                    <div style={{ padding: 16 }}>
+                      <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#86868b', marginBottom: 4 }}>Short Hook</div>
+                      <textarea defaultValue={ota.shortDesc || ''} style={{ ...s.textarea, minHeight: 60, marginBottom: 12, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 6, padding: 10 }} />
+                      <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#86868b', marginBottom: 4 }}>Full Listing Body</div>
+                      <textarea defaultValue={ota.fullBody || ''} style={{ ...s.textarea, minHeight: 120, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 6, padding: 10, marginBottom: 10 }} />
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                        {(ota.tags || []).map((t, i) => <span key={i} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 20, background: '#f5f5f7', color: '#6e6e73' }}>{t}</span>)}
+                      </div>
+                      <button onClick={() => copy(`${ota.shortDesc}\n\n${ota.fullBody}`)}
+                        style={{ width: '100%', padding: 9, border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
+                        Copy description
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* PHOTOS TAB */}
+            {activeTab === 'photos' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+                {(result.photos || []).map((p, i) => (
+                  <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, overflow: 'hidden' }}>
+                    {result.scrapedImages?.[i] ? (
+                      <img src={result.scrapedImages[i]} alt={p.room} style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover' }} onError={e => e.target.style.display = 'none'} />
+                    ) : (
+                      <div style={{ width: '100%', aspectRatio: '4/3', background: 'linear-gradient(135deg, #e8e0d4, #f5f5f7)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem' }}>{p.emoji}</div>
+                    )}
+                    <div style={{ padding: '14px 16px' }}>
+                      <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#c9a84c', marginBottom: 5 }}>{p.room}</div>
+                      <textarea defaultValue={p.description} style={{ ...s.textarea, minHeight: 70, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 6, padding: 8, marginBottom: 8, fontSize: '0.8rem', color: '#6e6e73' }} />
+                      <button onClick={() => copy(p.description)} style={{ width: '100%', padding: 8, border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>Copy description</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* PRICING TAB */}
+            {activeTab === 'pricing' && result.pricing && (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
+                  {(result.pricing.platforms || []).map((p, i) => (
+                    <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 20, textAlign: 'center' }}>
+                      <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#6e6e73', marginBottom: 8 }}>{p.name}</div>
+                      <div style={{ fontSize: '1.8rem', fontWeight: 900, letterSpacing: '-0.03em', color: '#1d1d1f' }}>${p.low}–${p.high}<span style={{ fontSize: '0.85rem', fontWeight: 400, color: '#6e6e73' }}>/night</span></div>
+                      <div style={{ fontSize: '0.75rem', color: '#6e6e73', marginTop: 4 }}>Avg ${p.avg}/night</div>
+                      <div style={{ marginTop: 8, background: '#f5f5f7', borderRadius: 4, padding: '5px 10px', fontSize: '0.72rem', color: '#6e6e73' }}>Est. {p.occupancy} occupancy</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 24 }}>
+                  <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: 10 }}>📊 Pricing Strategy</div>
+                  <p style={{ fontSize: '0.88rem', color: '#6e6e73', lineHeight: 1.7, marginBottom: 12 }}>{result.pricing.notes}</p>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ background: '#f5f5f7', padding: '12px 18px', borderRadius: 8, fontSize: '0.82rem' }}>
+                      <strong>Weekend Premium</strong><br /><span style={{ color: '#c9a84c', fontWeight: 700, fontSize: '1.1rem' }}>{result.pricing.weekendPremium}</span>
+                    </div>
+                    <div style={{ background: '#f5f5f7', padding: '12px 18px', borderRadius: 8, fontSize: '0.82rem', flex: 1 }}>
+                      <strong>Seasonal Tip</strong><br /><span style={{ color: '#6e6e73' }}>{result.pricing.seasonalTip}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* RULES TAB */}
+            {activeTab === 'rules' && result.rules && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 24 }}>
+                  <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 14 }}>🏠 House Rules</div>
+                  <div style={{ background: '#f5f5f7', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: '0.83rem' }}>
+                    <strong>Check-in:</strong> {result.rules.checkIn} &nbsp;·&nbsp; <strong>Check-out:</strong> {result.rules.checkOut}
+                  </div>
+                  {(result.rules.items || []).map((r, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.05)', fontSize: '0.83rem', alignItems: 'flex-start' }}>
+                      <span style={{ flexShrink: 0 }}>{r.icon}</span><span>{r.rule}</span>
+                    </div>
+                  ))}
+                  <button onClick={() => copy((result.rules.items || []).map(r => `${r.icon} ${r.rule}`).join('\n'))}
+                    style={{ width: '100%', padding: 9, border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', marginTop: 14 }}>
+                    Copy all rules
+                  </button>
+                </div>
+                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 24 }}>
+                  <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 14 }}>❓ Guest FAQ</div>
+                  {(result.rules.faq || []).map((f, i) => (
+                    <div key={i} style={{ padding: '12px 0', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.83rem', marginBottom: 4 }}>{f.q}</div>
+                      <div style={{ fontSize: '0.8rem', color: '#6e6e73', lineHeight: 1.6 }}>{f.a}</div>
+                    </div>
+                  ))}
+                  <button onClick={() => copy((result.rules.faq || []).map(f => `Q: ${f.q}\nA: ${f.a}`).join('\n\n'))}
+                    style={{ width: '100%', padding: 9, border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', marginTop: 14 }}>
+                    Copy all FAQ
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* SEO TAB */}
+            {activeTab === 'seo' && result.seo && (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 20 }}>
+                  {[['Primary Keywords', result.seo.primaryKeywords], ['Long-tail Keywords', result.seo.longTailKeywords], ['Local Keywords', result.seo.localKeywords]].map(([label, kws]) => (
+                    <div key={label} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 20 }}>
+                      <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#6e6e73', marginBottom: 12 }}>{label}</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {(kws || []).map((k, i) => <span key={i} style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: 20, background: '#fffde7', color: '#7a6800', border: '1px solid #f0d000' }}>{k}</span>)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 24 }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#6e6e73', marginBottom: 4 }}>Title Tag ({(result.seo.titleTag || '').length}/60 chars)</div>
+                    <textarea defaultValue={result.seo.titleTag} style={{ ...s.textarea, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 6, padding: 10, minHeight: 40, fontSize: '0.88rem' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#6e6e73', marginBottom: 4 }}>Meta Description ({(result.seo.metaDescription || '').length}/155 chars)</div>
+                    <textarea defaultValue={result.seo.metaDescription} style={{ ...s.textarea, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 6, padding: 10, minHeight: 60, fontSize: '0.85rem' }} />
+                  </div>
+                  <div style={{ marginTop: 16 }}>
+                    {(result.seo.tips || []).map((tip, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.05)', fontSize: '0.83rem', color: '#6e6e73' }}>
+                        <span style={{ color: '#c9a84c', fontWeight: 700, flexShrink: 0 }}>{i + 1}.</span>{tip}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* MARKET TAB */}
+            {activeTab === 'market' && result.market && (
+              <MarketTab market={result.market} property={result.property} />
+            )}
+
+            {/* AUDIT TAB */}
+            {activeTab === 'audit' && (
+              <AuditTab url={url} onRunAudit={runAudit} auditUrl={auditUrl} setAuditUrl={setAuditUrl} loading={auditLoading} result={auditResult} />
+            )}
+
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MarketTab({ market: m, property }) {
+  if (!m) return null;
+  const posColor = (m.position || '').includes('below') ? '#c9a84c' : '#34c759';
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 24 }}>
+        {[
+          { label: 'Your Rate', val: `$${m.yourRate?.avg}`, sub: `$${m.yourRate?.low}–$${m.yourRate?.high}`, color: '#1d1d1f' },
+          { label: 'Market Average', val: `$${m.marketAvg?.avg}`, sub: `Competitors: $${m.competitorRange?.low}–$${m.competitorRange?.high}`, color: '#2e6fad' },
+          { label: 'Your Position', val: m.position, sub: '', color: posColor },
+          { label: 'Annual Est.', val: `$${(m.revenueProjection?.moderate || 0).toLocaleString()}`, sub: `$${(m.revenueProjection?.conservative || 0).toLocaleString()}–$${(m.revenueProjection?.optimistic || 0).toLocaleString()}`, color: '#34c759' },
+        ].map((item, i) => (
+          <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 20, textAlign: 'center' }}>
+            <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 700, color: '#6e6e73', marginBottom: 8 }}>{item.label}</div>
+            <div style={{ fontSize: i === 2 ? '0.85rem' : '1.8rem', fontWeight: 900, color: item.color, letterSpacing: i === 2 ? 0 : '-0.03em', lineHeight: 1.2, marginBottom: 4 }}>{item.val}</div>
+            {item.sub && <div style={{ fontSize: '0.72rem', color: '#6e6e73' }}>{item.sub}</div>}
+          </div>
+        ))}
+      </div>
+
+      {/* Seasonal */}
+      <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 3, fontWeight: 600, color: '#6e6e73', marginBottom: 14 }}>Seasonal Pricing</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 24 }}>
+        {(m.seasonal || []).map((s, i) => {
+          const pct = Math.round((s.multiplier - 1) * 100);
+          const col = s.multiplier >= 1.3 ? '#34c759' : s.multiplier >= 1 ? '#c9a84c' : '#ff3b30';
+          const bg = s.multiplier >= 1.3 ? '#e8f5e9' : s.multiplier >= 1 ? '#fffde7' : '#fff5f5';
+          return (
+            <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 18 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1d1d1f' }}>{s.period}</div>
+                <span style={{ background: bg, color: col, fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 10 }}>{pct >= 0 ? '+' : ''}{pct}%</span>
+              </div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 900, color: '#1d1d1f', letterSpacing: '-0.03em' }}>${s.suggestedRate}<span style={{ fontSize: '0.8rem', fontWeight: 400, color: '#6e6e73' }}>/night</span></div>
+              <div style={{ fontSize: '0.75rem', color: '#6e6e73', marginTop: 4 }}>{s.notes}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Occasions */}
+      <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 3, fontWeight: 600, color: '#6e6e73', marginBottom: 14 }}>Special Occasion Pricing</div>
+      <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, overflow: 'hidden', marginBottom: 24 }}>
+        {(m.occasions || []).map((o, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 12, padding: '14px 20px', borderBottom: i < m.occasions.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', alignItems: 'center', background: i % 2 === 0 ? 'white' : '#fafaf8' }}>
+            <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{o.occasion}</div>
+            <span style={{ background: '#fffde7', color: '#f57f17', fontSize: '0.75rem', fontWeight: 700, padding: '3px 10px', borderRadius: 10, textAlign: 'center' }}>{o.premium}</span>
+            <div style={{ fontWeight: 700, color: '#34c759', fontSize: '1rem', textAlign: 'center' }}>${o.suggestedRate}</div>
+            <div style={{ fontSize: '0.72rem', color: '#6e6e73' }}>{o.tip}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Weekly / Monthly */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
+        {[
+          { label: '📅 Weekly Stays', rate: m.weekly?.suggestedWeekly, period: '/week', discount: m.weekly?.discount, tip: m.weekly?.tip },
+          { label: '📆 Monthly Stays', rate: m.monthly?.suggestedMonthly, period: '/month', discount: m.monthly?.discount, tip: m.monthly?.tip },
+        ].map((item, i) => (
+          <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 22 }}>
+            <div style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 2, fontWeight: 700, color: '#6e6e73', marginBottom: 10 }}>{item.label}</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 900, letterSpacing: '-0.03em', marginBottom: 4 }}>${(item.rate || 0).toLocaleString()}<span style={{ fontSize: '0.85rem', fontWeight: 400, color: '#6e6e73' }}>{item.period}</span></div>
+            <div style={{ fontSize: '0.8rem', color: '#c9a84c', fontWeight: 700, marginBottom: 8 }}>{item.discount} discount</div>
+            <div style={{ fontSize: '0.78rem', color: '#6e6e73', lineHeight: 1.6 }}>{item.tip}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background: 'rgba(201,168,76,0.08)', border: '1px solid rgba(201,168,76,0.2)', borderRadius: 10, padding: 22 }}>
+        <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: 8 }}>💡 Top Revenue Tip</div>
+        <div style={{ fontSize: '0.85rem', color: '#6e6e73', lineHeight: 1.7 }}>{m.revenueProjection?.topTip}</div>
+      </div>
+    </div>
+  );
+}
+
+function AuditTab({ url, onRunAudit, auditUrl, setAuditUrl, loading, result }) {
+  return (
+    <div>
+      <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 24, marginBottom: 20 }}>
+        <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 6 }}>🩺 Audit Any Listing</div>
+        <div style={{ fontSize: '0.85rem', color: '#6e6e73', marginBottom: 18 }}>Paste any live listing URL to get a health score, mistakes found, and AI fix suggestions.</div>
+        <div style={{ display: 'flex', gap: 0, border: '2px solid #1d1d1f', borderRadius: 6, overflow: 'hidden' }}>
+          <input value={auditUrl} onChange={e => setAuditUrl(e.target.value)} placeholder="Paste listing URL to audit..."
+            style={{ flex: 1, padding: '12px 16px', border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: '0.88rem' }} />
+          <button onClick={onRunAudit} disabled={loading}
+            style={{ padding: '12px 20px', background: '#1d1d1f', color: 'white', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.85rem', fontWeight: 600 }}>
+            {loading ? 'Auditing...' : 'Run Audit →'}
+          </button>
+        </div>
+        <div style={{ marginTop: 10, fontSize: '0.75rem', color: '#6e6e73' }}>
+          Or <button onClick={() => setAuditUrl(url)} style={{ background: 'none', border: 'none', color: '#c9a84c', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.75rem' }}>use the listing already analyzed above</button>
+        </div>
+      </div>
+
+      {result?.error && <div style={{ background: '#fff5f5', border: '1px solid #ffcccc', borderRadius: 8, padding: 20, color: '#c62828', fontSize: '0.85rem' }}>⚠️ {result.error}</div>}
+
+      {result && !result.error && (
+        <div>
+          {/* Score */}
+          <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 32, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 40, flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', width: 120, height: 120, flexShrink: 0 }}>
+              <svg width="120" height="120" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
+                <circle cx="60" cy="60" r="48" fill="none" stroke="#f0f0f0" strokeWidth="10" />
+                <circle cx="60" cy="60" r="48" fill="none" stroke={result.score >= 80 ? '#34c759' : result.score >= 60 ? '#c9a84c' : '#ff3b30'} strokeWidth="10"
+                  strokeDasharray={`${(result.score / 100) * 301.6} 301.6`} strokeLinecap="round" />
+              </svg>
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center' }}>
+                <div style={{ fontSize: '2rem', fontWeight: 900, lineHeight: 1, color: result.score >= 80 ? '#34c759' : result.score >= 60 ? '#c9a84c' : '#ff3b30' }}>{result.score}</div>
+                <div style={{ fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: 1, color: '#6e6e73' }}>Score</div>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '2.8rem', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, marginBottom: 6, color: result.score >= 80 ? '#34c759' : result.score >= 60 ? '#c9a84c' : '#ff3b30' }}>{result.grade}</div>
+              <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: 6 }}>{result.verdict}</div>
+              <div style={{ fontSize: '0.85rem', color: '#6e6e73', lineHeight: 1.6, maxWidth: 400 }}>{result.summary}</div>
+            </div>
+          </div>
+
+          {/* Categories */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 20 }}>
+            {(result.categories || []).map((cat, i) => (
+              <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: 6 }}>{cat.icon} {cat.name}</div>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: cat.score >= 75 ? '#e8f5e9' : cat.score >= 55 ? '#fffde7' : '#fce4ec', color: cat.score >= 75 ? '#2e7d32' : cat.score >= 55 ? '#f57f17' : '#c62828' }}>{cat.score}/100</span>
+                </div>
+                {(cat.issues || []).map((issue, j) => (
+                  <div key={j} style={{ display: 'flex', gap: 8, padding: '7px 0', borderBottom: j < cat.issues.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', fontSize: '0.8rem' }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, marginTop: 4, background: issue.type === 'error' ? '#ff3b30' : issue.type === 'warn' ? '#c9a84c' : '#34c759' }} />
+                    <div>
+                      <div style={{ color: '#1d1d1f' }}>{issue.text}</div>
+                      {issue.fix && <div style={{ fontSize: '0.75rem', color: '#34c759', marginTop: 2 }}>→ {issue.fix}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {/* Top Fixes */}
+          <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 24 }}>
+            <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 16 }}>🔧 Priority Fixes</div>
+            {(result.topFixes || []).map((fix, i) => (
+              <div key={i} style={{ display: 'flex', gap: 14, padding: '14px 0', borderBottom: i < result.topFixes.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none', alignItems: 'flex-start' }}>
+                <span style={{ fontSize: '0.65rem', fontWeight: 800, letterSpacing: 1, padding: '3px 8px', borderRadius: 3, flexShrink: 0, background: fix.priority === 'high' ? '#fce4ec' : fix.priority === 'med' ? '#fffde7' : '#e8f5e9', color: fix.priority === 'high' ? '#c62828' : fix.priority === 'med' ? '#f57f17' : '#2e7d32', textTransform: 'uppercase' }}>{fix.priority}</span>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '0.88rem', marginBottom: 4 }}>{fix.title}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#6e6e73', lineHeight: 1.6, marginBottom: fix.suggestion ? 6 : 0 }}>{fix.description}</div>
+                  {fix.suggestion && <div style={{ background: '#f5f5f7', borderRadius: 4, padding: '8px 12px', fontSize: '0.78rem', fontStyle: 'italic', color: '#1d1d1f', borderLeft: '3px solid #c9a84c' }}>"{fix.suggestion}"</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
