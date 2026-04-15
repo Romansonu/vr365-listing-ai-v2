@@ -923,7 +923,7 @@ Audit this listing and return ONLY valid JSON:
                 <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, padding: 24 }}>
                   <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: 14 }}>🏠 House Rules</div>
                   <div style={{ background: '#f5f5f7', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: '0.83rem' }}>
-                    <strong>Check-in:</strong> {result.rules.checkIn} &nbsp;·&nbsp; <strong>Check-out:</strong> {result.rules.checkOut}
+                    <strong>Check-in:</strong> {result.rules.checkIn}  ·  <strong>Check-out:</strong> {result.rules.checkOut}
                   </div>
                   {(result.rules.items || []).map((r, i) => (
                     <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.05)', fontSize: '0.83rem', alignItems: 'flex-start' }}>
