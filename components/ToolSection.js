@@ -974,19 +974,20 @@ Audit this listing and return ONLY valid JSON:
             {/* PHOTOS TAB */}
             {activeTab === 'photos' && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-                {(result.photos || []).map((p, i) => (
+                {(result.photos || []).map((p, i) => {
+                  const imgSrc = p.imageUrl || (result.scrapedImages && result.scrapedImages[i]);
+                  return (
                   <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, overflow: 'hidden' }}>
-                    {(p.imageUrl || result.scrapedImages?.[i]) ? (
+                    {imgSrc ? (
                       <img 
-                        src={p.imageUrl || result.scrapedImages?.[i]} 
-                        alt={p.room} 
-                        crossOrigin="anonymous"
-                        referrerPolicy="no-referrer"
+                        src={imgSrc}
+                        alt={p.room || 'Photo'}
                         style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} 
-                        onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                        onError={e => { e.target.style.display = 'none'; }}
                       />
-                    ) : null}
-                    <div style={{ width: '100%', aspectRatio: '4/3', background: 'linear-gradient(135deg, #e8e0d4, #f5f5f7)', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', display: (p.imageUrl || result.scrapedImages?.[i]) ? 'none' : 'flex' }}>{p.emoji}</div>
+                    ) : (
+                      <div style={{ width: '100%', aspectRatio: '4/3', background: 'linear-gradient(135deg, #e8e0d4, #f5f5f7)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem' }}>{p.emoji || '📸'}</div>
+                    )}
                     <div style={{ padding: '14px 16px' }}>
                       <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#c9a84c', marginBottom: 5 }}>{p.room}</div>
                       <textarea defaultValue={p.description} style={{ ...s.textarea, minHeight: 70, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 6, padding: 8, marginBottom: 8, fontSize: '0.8rem', color: '#6e6e73' }} />
