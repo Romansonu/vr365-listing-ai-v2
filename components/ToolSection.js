@@ -135,6 +135,25 @@ USE THIS REAL DATA ONLY.`;
       // STEP 2: Get property info + non-OTA sections
       setLoadingStep('🏠 Analyzing property details...');
       const wantPhotos = selectedFeatures.has('photos');
+
+      // Fetch real image data for vision analysis
+      let photoBase64List = [];
+      if (wantPhotos && scrapedImages.length > 0) {
+        setLoadingStep('📸 Loading photos for analysis...');
+        const photoFetches = scrapedImages.slice(0, 40).map(async (imgUrl) => {
+          try {
+            const r = await fetch('/api/scrape', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: imgUrl, fetchImage: true }),
+            });
+            const d = await r.json();
+            if (d.success && d.base64) return { url: imgUrl, base64: d.base64, mediaType: d.mediaType };
+          } catch {}
+          return { url: imgUrl, base64: null };
+        });
+        photoBase64List = await Promise.all(photoFetches);
+      }
       const wantPricing = selectedFeatures.has('pricing');
       const wantRules = selectedFeatures.has('rules');
       const wantSEO = selectedFeatures.has('seo');
@@ -157,7 +176,7 @@ Return ONLY valid JSON, no other text:
     "highlights": ["highlight1","highlight2","highlight3"],
     "nearbyAttractions": ["nearby1","nearby2","nearby3"]
   }
-  ${wantPhotos ? `,"photos": [
+  ${wantPhotos && photoBase64List.filter(p => !p.base64).length === photoBase64List.length ? `,"photos": [
     {"room":"Living Room","emoji":"🛋️","description":"2-3 sentence description based on real listing"},
     {"room":"Master Bedroom","emoji":"🛏️","description":"description"},
     {"room":"Kitchen","emoji":"🍳","description":"description"},
@@ -238,6 +257,91 @@ Return ONLY valid JSON, no other text:
 }`;
 
       const mainResult = await callAI([{ role: 'user', content: mainPrompt }]);
+
+      // STEP 2.5: Analyze photos with Claude Vision
+      if (wantPhotos && photoBase64List.some(p => p.base64)) {
+        setLoadingStep('👁️ Analyzing photos with AI vision...');
+        const photosWithData = photoBase64List.filter(p => p.base64);
+        
+        const visionMessages = [
+          {
+            role: 'user',
+            content: [
+              ...photosWithData.map(p => ({
+                type: 'image',
+                source: { type: 'base64', media_type: p.mediaType || 'image/jpeg', data: p.base64 }
+              })),
+              {
+                type: 'text',
+                text: `You are a professional vacation rental photographer and copywriter. Look at these ${photosWithData.length} property photos carefully.
+
+For each photo write a compelling 2-3 sentence description that:
+- Identifies exactly what room/space it shows
+- Describes specific details you can actually see (furniture, colors, features, amenities)
+- Uses evocative, marketable language that makes guests want to book
+
+Return ONLY valid JSON:
+{
+  "photos": [
+    {"room": "exact room name you see", "emoji": "matching emoji", "description": "compelling 2-3 sentence description of what you actually see in this photo"}
+  ]
+}
+
+Write one entry per photo in order. Be specific about what you actually see — don't guess.`
+              }
+            ]
+          }
+        ];
+
+        try {
+          // Split into batches of 20 for vision API
+          const batchSize = 20;
+          const batches = [];
+          for (let i = 0; i < photosWithData.length; i += batchSize) {
+            batches.push(photosWithData.slice(i, i + batchSize));
+          }
+
+          const batchPromises = batches.map((batch, batchIdx) => {
+            const batchMessages = [
+              {
+                role: 'user',
+                content: [
+                  ...batch.map(p => ({
+                    type: 'image',
+                    source: { type: 'base64', media_type: p.mediaType || 'image/jpeg', data: p.base64 }
+                  })),
+                  {
+                    type: 'text',
+                    text: \`You are a professional vacation rental photographer and copywriter. Look at all \${batch.length} property photos carefully.
+
+For EVERY single photo write a compelling 2-3 sentence description. Return exactly \${batch.length} entries.
+Describe specific details you actually see — furniture, colors, finishes, views, amenities, equipment.
+Use evocative marketable language. Be specific — mention actual items like "stone fireplace", "vaulted ceilings", "mountain views", "shuffleboard table".
+
+Return ONLY valid JSON:
+{"photos": [{"room": "exact room name", "emoji": "matching emoji", "description": "compelling 2-3 sentence description"}]}\`
+                  }
+                ]
+              }
+            ];
+            return callAI(batchMessages, 4000);
+          });
+
+          const batchResults = await Promise.all(batchPromises);
+          const allPhotos = batchResults.flatMap((r, batchIdx) =>
+            (r.photos || []).map((p, i) => ({
+              ...p,
+              imageUrl: batches[batchIdx][i]?.url
+            }))
+          );
+
+          if (allPhotos.length > 0) {
+            mainResult.photos = allPhotos;
+          }
+        } catch(e) {
+          console.log('Vision analysis failed, using text-based descriptions');
+        }
+      }
 
       // STEP 3: OTA Headlines + Descriptions (batched)
       let otas = [];
