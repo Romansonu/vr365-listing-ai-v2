@@ -300,7 +300,7 @@ Return ONLY valid JSON, no other text:
                   })),
                   {
                     type: 'text',
-                    text: 'You are a professional vacation rental photographer and copywriter. Look at all ' + batch.length + ' property photos carefully. For EVERY single photo write a compelling 2-3 sentence description. Return exactly ' + batch.length + ' entries. Describe specific details you actually see — furniture, colors, finishes, views, amenities, equipment. Use evocative marketable language. Be specific — mention actual items like stone fireplace, vaulted ceilings, mountain views, shuffleboard table. Return ONLY valid JSON: {"photos": [{"room": "exact room name", "emoji": "matching emoji", "description": "compelling 2-3 sentence description"}]}'
+                    text: 'You are a vacation rental copywriter. Look at all ' + batch.length + ' photos. For each write ONE short punchy sentence (max 15 words) that highlights the best feature visible. Be specific and evocative — no generic phrases. Return ONLY valid JSON: {"photos": [{"room": "short room name", "emoji": "matching emoji", "description": "one punchy sentence max 15 words"}]}'
                   }
                 ]
               }
@@ -390,6 +390,13 @@ ${template}
         otas = batchResults.flatMap(r => r.otas || []);
       }
 
+      // Attach imageUrls to photos from scrapedImages
+      if (mainResult.photos && scrapedImages.length > 0) {
+        mainResult.photos = mainResult.photos.map((p, i) => ({
+          ...p,
+          imageUrl: p.imageUrl || scrapedImages[i] || null
+        }));
+      }
       setResult({ ...mainResult, otas, scrapedImages });
       setActiveTab(selectedFeatures.has('ota') ? 'ota' : [...selectedFeatures][0]);
       setLoadingStep('');
@@ -869,11 +876,15 @@ Audit this listing and return ONLY valid JSON:
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
                 {(result.photos || []).map((p, i) => (
                   <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, overflow: 'hidden' }}>
-                    {result.scrapedImages?.[i] ? (
-                      <img src={result.scrapedImages[i]} alt={p.room} style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover' }} onError={e => e.target.style.display = 'none'} />
-                    ) : (
-                      <div style={{ width: '100%', aspectRatio: '4/3', background: 'linear-gradient(135deg, #e8e0d4, #f5f5f7)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem' }}>{p.emoji}</div>
-                    )}
+                    {(p.imageUrl || result.scrapedImages?.[i]) ? (
+                      <img 
+                        src={p.imageUrl || result.scrapedImages[i]} 
+                        alt={p.room} 
+                        style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} 
+                        onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                      />
+                    ) : null}
+                    <div style={{ width: '100%', aspectRatio: '4/3', background: 'linear-gradient(135deg, #e8e0d4, #f5f5f7)', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', display: (p.imageUrl || result.scrapedImages?.[i]) ? 'none' : 'flex' }}>{p.emoji}</div>
                     <div style={{ padding: '14px 16px' }}>
                       <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#c9a84c', marginBottom: 5 }}>{p.room}</div>
                       <textarea defaultValue={p.description} style={{ ...s.textarea, minHeight: 70, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 6, padding: 8, marginBottom: 8, fontSize: '0.8rem', color: '#6e6e73' }} />
