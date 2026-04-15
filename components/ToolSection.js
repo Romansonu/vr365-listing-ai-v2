@@ -263,36 +263,6 @@ Return ONLY valid JSON, no other text:
         setLoadingStep('👁️ Analyzing photos with AI vision...');
         const photosWithData = photoBase64List.filter(p => p.base64);
         
-        const visionMessages = [
-          {
-            role: 'user',
-            content: [
-              ...photosWithData.map(p => ({
-                type: 'image',
-                source: { type: 'base64', media_type: p.mediaType || 'image/jpeg', data: p.base64 }
-              })),
-              {
-                type: 'text',
-                text: `You are a professional vacation rental photographer and copywriter. Look at these ${photosWithData.length} property photos carefully.
-
-For each photo write a compelling 2-3 sentence description that:
-- Identifies exactly what room/space it shows
-- Describes specific details you can actually see (furniture, colors, features, amenities)
-- Uses evocative, marketable language that makes guests want to book
-
-Return ONLY valid JSON:
-{
-  "photos": [
-    {"room": "exact room name you see", "emoji": "matching emoji", "description": "compelling 2-3 sentence description of what you actually see in this photo"}
-  ]
-}
-
-Write one entry per photo in order. Be specific about what you actually see — don't guess.`
-              }
-            ]
-          }
-        ];
-
         try {
           // Split into batches of 20 for vision API
           const batchSize = 20;
@@ -312,14 +282,7 @@ Write one entry per photo in order. Be specific about what you actually see — 
                   })),
                   {
                     type: 'text',
-                    text: \`You are a professional vacation rental photographer and copywriter. Look at all \${batch.length} property photos carefully.
-
-For EVERY single photo write a compelling 2-3 sentence description. Return exactly \${batch.length} entries.
-Describe specific details you actually see — furniture, colors, finishes, views, amenities, equipment.
-Use evocative marketable language. Be specific — mention actual items like "stone fireplace", "vaulted ceilings", "mountain views", "shuffleboard table".
-
-Return ONLY valid JSON:
-{"photos": [{"room": "exact room name", "emoji": "matching emoji", "description": "compelling 2-3 sentence description"}]}\`
+                    text: 'You are a professional vacation rental photographer and copywriter. Look at all ' + batch.length + ' property photos carefully. For EVERY single photo write a compelling 2-3 sentence description. Return exactly ' + batch.length + ' entries. Describe specific details you actually see — furniture, colors, finishes, views, amenities, equipment. Use evocative marketable language. Be specific — mention actual items like stone fireplace, vaulted ceilings, mountain views, shuffleboard table. Return ONLY valid JSON: {"photos": [{"room": "exact room name", "emoji": "matching emoji", "description": "compelling 2-3 sentence description"}]}'
                   }
                 ]
               }
