@@ -110,7 +110,7 @@ export default function ToolSection() {
 
   const analyze = async () => {
     if (inputMode === 'url' && !url) return setError('Please paste a property URL.');
-    if (inputMode === 'manual' && !manualData.title && !manualData.address) return setError('Please enter at least a property name and location.');
+    if (inputMode === 'manual' && !manualData.title && !manualData.address && uploadedPhotos.length === 0) return setError('Please enter property details or upload photos.');
     if (selectedFeatures.size === 0) return setError('Please select at least one feature.');
     if (selectedFeatures.has('ota') && selectedOTAs.size === 0) return setError('Please select at least one OTA platform.');
 
@@ -124,8 +124,8 @@ export default function ToolSection() {
       let scrapedImages = [];
 
       if (inputMode === 'manual') {
-        // Build context from manual entry
-                scrapedContext = 'PROPERTY DATA ENTERED BY USER:\nName: ' + manualData.title + '\nLocation: ' + manualData.address + '\nType: ' + manualData.type + '\nBedrooms: ' + manualData.bedrooms + ', Bathrooms: ' + manualData.bathrooms + ', Guests: ' + manualData.guests + '\nAmenities: ' + manualData.amenities + '\nNearby: ' + manualData.nearbyAttractions + '\nDescription: ' + manualData.description + '\nUSE ONLY THIS DATA.';
+        // Build context from manual entry - no URL needed
+        scrapedContext = 'PROPERTY DATA ENTERED BY USER:\nName: ' + (manualData.title || 'Vacation Rental') + '\nLocation: ' + (manualData.address || 'Location not specified') + '\nType: ' + (manualData.type || 'Vacation Rental') + '\nBedrooms: ' + (manualData.bedrooms || '?') + ', Bathrooms: ' + (manualData.bathrooms || '?') + ', Guests: ' + (manualData.guests || '?') + '\nAmenities: ' + (manualData.amenities || '') + '\nNearby: ' + (manualData.nearbyAttractions || '') + '\nDescription: ' + (manualData.description || '') + '\nUSE ONLY THIS DATA. Do not make up details.';
         setLoadingStep('📝 Using manual property data...');
       } else {
         setLoadingStep('🔍 Scanning website...');
@@ -185,7 +185,7 @@ export default function ToolSection() {
 
       const mainPrompt = `You are a vacation rental copywriter. Extract real property info and generate content.
 ${scrapedContext}
-URL: ${url}${customInstructions}
+URL: ${inputMode === 'manual' ? 'Manual entry' : url}${customInstructions}
 Return ONLY valid JSON, no other text:
 {
   "property": {
@@ -573,6 +573,56 @@ Audit this listing and return ONLY valid JSON:
               onKeyDown={e => e.key === 'Enter' && analyze()}
               placeholder="Paste any property URL — Airbnb, VRBO, your own website..."
               style={{ flex: 1, padding: '16px 20px', border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: '0.95rem', color: '#1d1d1f' }}
+            />
+          </div>
+        )}
+
+        {/* Photo Upload for URL mode - shown when photos feature selected */}
+        {inputMode === 'url' && selectedFeatures.has('photos') && (
+          <div style={{ marginBottom: 16 }}>
+            <div
+              onClick={() => document.getElementById('urlModePhotoInput').click()}
+              style={{ border: '2px dashed rgba(0,0,0,0.12)', borderRadius: 8, padding: '14px 20px', cursor: 'pointer', background: 'white', display: 'flex', alignItems: 'center', gap: 12 }}
+            >
+              <span style={{ fontSize: '1.4rem' }}>📸</span>
+              <div>
+                <div style={{ fontSize: '0.83rem', fontWeight: 600, color: '#1d1d1f' }}>
+                  {uploadedPhotos.length > 0 ? uploadedPhotos.length + ' photos ready for AI analysis' : 'Upload photos for better descriptions (optional)'}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#86868b' }}>
+                  {uploadedPhotos.length > 0 ? 'AI will describe each photo — click to add more' : 'Your site uses lazy loading — upload photos directly for accurate descriptions'}
+                </div>
+              </div>
+              {uploadedPhotos.length > 0 && (
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                  {uploadedPhotos.slice(0, 5).map((p, i) => (
+                    <img key={i} src={p.url} style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, border: '1px solid rgba(201,168,76,0.4)' }} />
+                  ))}
+                  {uploadedPhotos.length > 5 && <div style={{ width: 36, height: 36, borderRadius: 4, background: '#f5f5f7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700, color: '#6e6e73' }}>+{uploadedPhotos.length - 5}</div>}
+                </div>
+              )}
+            </div>
+            <input
+              id="urlModePhotoInput"
+              type="file"
+              multiple
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={e => {
+                const files = Array.from(e.target.files);
+                files.forEach(file => {
+                  const reader = new FileReader();
+                  reader.onload = ev => {
+                    setUploadedPhotos(prev => [...prev, {
+                      url: URL.createObjectURL(file),
+                      base64: ev.target.result.split(',')[1],
+                      mediaType: file.type || 'image/jpeg',
+                      name: file.name
+                    }]);
+                  };
+                  reader.readAsDataURL(file);
+                });
+              }}
             />
           </div>
         )}
@@ -974,13 +1024,11 @@ Audit this listing and return ONLY valid JSON:
             {/* PHOTOS TAB */}
             {activeTab === 'photos' && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-                {(result.photos || []).map((p, i) => {
-                  const imgSrc = p.imageUrl || (result.scrapedImages && result.scrapedImages[i]);
-                  return (
+                {(result.photos || []).map((p, i) => (
                   <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, overflow: 'hidden' }}>
-                    {imgSrc ? (
+                    {(p.imageUrl || (result.scrapedImages && result.scrapedImages[i])) ? (
                       <img 
-                        src={imgSrc}
+                        src={p.imageUrl || result.scrapedImages[i]}
                         alt={p.room || 'Photo'}
                         style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} 
                         onError={e => { e.target.style.display = 'none'; }}
