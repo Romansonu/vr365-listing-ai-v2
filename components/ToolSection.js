@@ -5,9 +5,9 @@ const CHAR_LIMITS = {
   'Airbnb': 50, 'VRBO': 75, 'Booking.com': 60, 'TripAdvisor': 80,
   'Google Vacation Rentals': 100, 'Hipcamp': 60, 'Expedia': 120,
   'Hotels.com': 100, 'Agoda': 80, 'Kayak': 90,
-  'Homes & Villas by Marriott': 100, 'Plum Guide': 60, 'Houfy': 75,
+  'Homes and Villas by Marriott': 100, 'Plum Guide': 60, 'Houfy': 75,
   'Vacasa': 80, 'Evolve': 75, 'Furnished Finder': 80,
-  'Glamping Hub': 60, "Misterb&b": 75,
+  'Glamping Hub': 60, "Misterbnb": 75,
 };
 
 const OTA_META = {
@@ -21,14 +21,14 @@ const OTA_META = {
   'Hotels.com': { icon: '🏩', color: 'hotelscom' },
   'Agoda': { icon: '🌐', color: 'agoda' },
   'Kayak': { icon: '🔎', color: 'kayak' },
-  'Homes & Villas by Marriott': { icon: '🏅', color: 'marriott' },
+  'Homes and Villas by Marriott': { icon: '🏅', color: 'marriott' },
   'Plum Guide': { icon: '✨', color: 'plumguide' },
   'Houfy': { icon: '🏡', color: 'houfy' },
   'Vacasa': { icon: '🏘️', color: 'vacasa' },
   'Evolve': { icon: '🔑', color: 'evolve' },
   'Furnished Finder': { icon: '🛋️', color: 'furnishedfinder' },
   'Glamping Hub': { icon: '⛺', color: 'glampinghub' },
-  "Misterb&b": { icon: '🌈', color: 'misterbnb' },
+  "Misterbnb": { icon: '🌈', color: 'misterbnb' },
 };
 
 const ALL_OTAS = Object.keys(CHAR_LIMITS);
@@ -427,14 +427,14 @@ Audit this listing and return ONLY valid JSON:
   "verdict": "one line verdict",
   "summary": "2-3 sentence summary",
   "categories": [
-    {"name":"Headline & Title","icon":"✍️","score":0,"issues":[
+    {"name":"Headline and Title","icon":"✍️","score":0,"issues":[
       {"type":"error","text":"issue description","fix":"how to fix"}
     ]},
     {"name":"Description Quality","icon":"📝","score":0,"issues":[]},
     {"name":"Photo Coverage","icon":"📸","score":0,"issues":[]},
-    {"name":"SEO & Discoverability","icon":"🔍","score":0,"issues":[]},
-    {"name":"Trust & Conversion","icon":"⭐","score":0,"issues":[]},
-    {"name":"Pricing & Value","icon":"💰","score":0,"issues":[]}
+    {"name":"SEO and Discoverability","icon":"🔍","score":0,"issues":[]},
+    {"name":"Trust and Conversion","icon":"⭐","score":0,"issues":[]},
+    {"name":"Pricing and Value","icon":"💰","score":0,"issues":[]}
   ],
   "topFixes": [
     {"priority":"high","title":"fix title","description":"why it matters","suggestion":"example fix"}
@@ -534,7 +534,7 @@ Audit this listing and return ONLY valid JSON:
             </div>
             <div style={{ padding: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {[
-                { key: 'title', label: 'Property Name', placeholder: 'e.g. Cedar & Sage Mountain Retreat', full: true },
+                { key: 'title', label: 'Property Name', placeholder: 'e.g. Cedar and Sage Mountain Retreat', full: true },
                 { key: 'address', label: 'Location', placeholder: 'e.g. Suncadia, Washington', full: true },
                 { key: 'type', label: 'Property Type', placeholder: 'e.g. Mountain Cabin, Beach House' },
                 { key: 'bedrooms', label: 'Bedrooms', placeholder: '6' },
