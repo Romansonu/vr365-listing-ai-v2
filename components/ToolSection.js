@@ -291,9 +291,10 @@ Return ONLY valid JSON, no other text:
         }
       }
 
-      // Use uploaded photos if available, otherwise use scraped
+      // Use uploaded photos regardless of mode - always prefer uploaded over scraped
       if (uploadedPhotos.length > 0 && wantPhotos) {
         photoBase64List = uploadedPhotos.map(p => ({ url: p.url, base64: p.base64, mediaType: p.mediaType }));
+        setLoadingStep('📸 Using ' + uploadedPhotos.length + ' uploaded photos...');
       }
 
       // STEP 2.5: Analyze photos with Claude Vision
