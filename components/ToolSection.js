@@ -69,8 +69,6 @@ async function callAI(messages, maxTokens = 4000) {
   throw new Error('Could not parse AI response. Please try again or select fewer options.');
 }
 
-const proxyImg = (url) => url ? `/api/image?url=${encodeURIComponent(url)}` : null;
-
 export default function ToolSection() {
   const [url, setUrl] = useState('');
   const [selectedFeatures, setSelectedFeatures] = useState(new Set());
@@ -90,6 +88,7 @@ export default function ToolSection() {
     guests: '', sqft: '', amenities: '', description: '', nearbyAttractions: ''
   });
   const [auditLoading, setAuditLoading] = useState(false);
+  const [uploadedPhotos, setUploadedPhotos] = useState([]); // {url, base64, name}
   const [auditResult, setAuditResult] = useState(null);
   const fileRef = useRef();
 
@@ -292,6 +291,11 @@ Return ONLY valid JSON, no other text:
         }
       }
 
+      // Use uploaded photos if available, otherwise use scraped
+      if (uploadedPhotos.length > 0 && wantPhotos) {
+        photoBase64List = uploadedPhotos.map(p => ({ url: p.url, base64: p.base64, mediaType: p.mediaType }));
+      }
+
       // STEP 2.5: Analyze photos with Claude Vision
       if (wantPhotos && photoBase64List.some(p => p.base64)) {
         setLoadingStep('👁️ Analyzing photos with AI vision...');
@@ -415,21 +419,25 @@ ${template}
         otas = batchResults.flatMap(r => r.otas || []);
       }
 
-      // Always attach scrapedImages to photos
-      if (scrapedImages.length > 0) {
+      console.log('Scraped images found:', scrapedImages.length, scrapedImages.slice(0,3));
+
+      // Attach images to photos
+      const imageSourceList = uploadedPhotos.length > 0 
+        ? uploadedPhotos.map(p => p.url)
+        : scrapedImages;
+
+      if (imageSourceList.length > 0) {
         if (!mainResult.photos || mainResult.photos.length === 0) {
-          // Create photo entries from scraped images
-          mainResult.photos = scrapedImages.slice(0, photoLimit).map((imgUrl, i) => ({
+          mainResult.photos = imageSourceList.slice(0, photoLimit).map((imgUrl, i) => ({
             room: 'Photo ' + (i + 1),
             emoji: '📸',
             description: '',
             imageUrl: imgUrl
           }));
         } else {
-          // Attach images to existing photo descriptions
           mainResult.photos = mainResult.photos.map((p, i) => ({
             ...p,
-            imageUrl: p.imageUrl || scrapedImages[i] || null
+            imageUrl: p.imageUrl || imageSourceList[i] || null
           }));
         }
       }
@@ -688,8 +696,63 @@ Audit this listing and return ONLY valid JSON:
           </div>
         )}
 
-        {/* Photo Limit Selector - shows when photos selected */}
+        {/* Photo Upload - shows when photos selected */}
         {selectedFeatures.has('photos') && (
+          <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+            <div style={{ padding: '12px 18px', borderBottom: '1px solid rgba(0,0,0,0.06)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: '#6e6e73', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Upload your photos (optional)</span>
+              {uploadedPhotos.length > 0 && <span style={{ color: '#c9a84c', fontWeight: 700 }}>{uploadedPhotos.length} uploaded</span>}
+            </div>
+            <div style={{ padding: 16 }}>
+              <div
+                onClick={() => document.getElementById('photoUploadInput').click()}
+                style={{ border: '2px dashed rgba(0,0,0,0.12)', borderRadius: 8, padding: '20px', textAlign: 'center', cursor: 'pointer', background: '#fafaf8' }}
+              >
+                <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>📸</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1d1d1f', marginBottom: 2 }}>Click to upload property photos</div>
+                <div style={{ fontSize: '0.72rem', color: '#86868b' }}>JPG, PNG, WEBP — AI will describe each one</div>
+              </div>
+              <input
+                id="photoUploadInput"
+                type="file"
+                multiple
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={e => {
+                  const files = Array.from(e.target.files);
+                  files.forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                      setUploadedPhotos(prev => [...prev, {
+                        url: URL.createObjectURL(file),
+                        base64: ev.target.result.split(',')[1],
+                        mediaType: file.type || 'image/jpeg',
+                        name: file.name
+                      }]);
+                    };
+                    reader.readAsDataURL(file);
+                  });
+                }}
+              />
+              {uploadedPhotos.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                  {uploadedPhotos.map((p, i) => (
+                    <div key={i} style={{ position: 'relative' }}>
+                      <img src={p.url} style={{ width: 60, height: 60, objectFit: 'cover', borderRadius: 6, border: '2px solid rgba(201,168,76,0.4)' }} />
+                      <button onClick={() => setUploadedPhotos(prev => prev.filter((_, j) => j !== i))}
+                        style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', background: '#ff3b30', border: 'none', color: 'white', fontSize: '0.6rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900 }}>✕</button>
+                    </div>
+                  ))}
+                  <button onClick={() => setUploadedPhotos([])}
+                    style={{ padding: '4px 10px', border: '1px solid rgba(0,0,0,0.1)', background: 'transparent', borderRadius: 6, fontSize: '0.72rem', cursor: 'pointer', color: '#86868b', alignSelf: 'center' }}>Clear all</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Photo Limit Selector - shows when photos selected and no uploads */}
+        {selectedFeatures.has('photos') && uploadedPhotos.length === 0 && (
           <div style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
             <div style={{ padding: '12px 18px', borderBottom: '1px solid rgba(0,0,0,0.06)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', color: '#6e6e73' }}>
               How many photos to analyze?
@@ -714,6 +777,7 @@ Audit this listing and return ONLY valid JSON:
             </div>
           </div>
         )}
+        
 
         {/* Custom Prompt */}
         <div style={{ marginBottom: 16 }}>
@@ -914,8 +978,10 @@ Audit this listing and return ONLY valid JSON:
                   <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, overflow: 'hidden' }}>
                     {(p.imageUrl || result.scrapedImages?.[i]) ? (
                       <img 
-                        src={proxyImg(p.imageUrl || result.scrapedImages?.[i])} 
+                        src={p.imageUrl || result.scrapedImages?.[i]} 
                         alt={p.room} 
+                        crossOrigin="anonymous"
+                        referrerPolicy="no-referrer"
                         style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} 
                         onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
                       />
