@@ -14,8 +14,8 @@ const FEATURES = [
   { icon: '📝', title: 'OTA Descriptions', desc: 'Full listing body copy per platform, tone-matched and conversion-optimized' },
   { icon: '📸', title: 'Photo Descriptions', desc: 'Room-by-room captions pulled from real listing photos' },
   { icon: '💰', title: 'Pricing Intelligence', desc: 'Market rates, seasonal multipliers, weekend premiums and competitor benchmarks' },
-  { icon: '📋', title: 'House Rules & FAQ', desc: 'Auto-generated rules, check-in policies and guest FAQ' },
-  { icon: '🔍', title: 'SEO & Keywords', desc: 'Primary, long-tail and local keywords plus meta tags' },
+  { icon: '📋', title: 'House Rules + FAQ', desc: 'Auto-generated rules, check-in policies and guest FAQ' },
+  { icon: '🔍', title: 'SEO + Keywords', desc: 'Primary, long-tail and local keywords plus meta tags' },
   { icon: '📊', title: 'Market Intel', desc: 'Competitor rates by bedroom, seasonal strategy and occasion pricing' },
   { icon: '🩺', title: 'Listing Auditor', desc: 'Health score out of 100 with ranked fix suggestions' },
 ];
@@ -37,8 +37,8 @@ export default function LandingPage() {
           VR365 <span style={{ color: '#c9a84c' }}>Listing AI</span>
         </div>
         <div style={{ display: 'flex', gap: 28 }}>
-          {['Features', 'Before & After', 'Pricing'].map(l => (
-            <a key={l} href={`#${l.toLowerCase().replace(' & ', '-').replace(' ', '-')}`}
+          {['Features', 'Before and After', 'Pricing'].map(l => (
+            <a key={l} href={`#${l.toLowerCase().replace(' and ', '-').replace(' ', '-')}`}
               style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)', textDecoration: 'none' }}>
               {l}
             </a>
@@ -152,7 +152,7 @@ export default function LandingPage() {
       {/* BEFORE / AFTER */}
       <section id="before-after" style={{ background: '#f5f5f7', padding: '120px 48px' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-          <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: '#c9a84c', marginBottom: 16 }}>Before & After</div>
+          <div style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase', color: '#c9a84c', marginBottom: 16 }}>Before and After</div>
           <h2 style={{ fontSize: 'clamp(2.2rem, 4vw, 3.2rem)', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 16, color: '#1d1d1f' }}>
             The old way was<br />costing you everything.
           </h2>
@@ -236,8 +236,8 @@ export default function LandingPage() {
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.1fr', gap: 16, marginBottom: 32, textAlign: 'left' }}>
             {[
-              { plan: 'Free', price: '0', tagline: 'Try VR365 with no commitment.', features: ['3 listings per month', 'Airbnb + VRBO only', 'Basic photo descriptions', '1 listing audit/month'], off: ['All 18 OTA platforms', 'Pricing intelligence', 'SEO & keywords', 'House rules & FAQ', 'Market Intel'], popular: false },
-              { plan: 'Pro', price: '99', tagline: 'Everything. Unlimited properties. No contracts.', features: ['Unlimited listings', 'All 18 OTA platforms', '10 headlines per platform', 'Full photo descriptions', 'Pricing intelligence', 'SEO & keywords', 'House rules & FAQ', 'Market Intel + Auditor', 'Version history + PDF export', 'Priority support'], off: [], popular: true },
+              { plan: 'Free', price: '0', tagline: 'Try VR365 with no commitment.', features: ['3 listings per month', 'Airbnb + VRBO only', 'Basic photo descriptions', '1 listing audit/month'], off: ['All 18 OTA platforms', 'Pricing intelligence', 'SEO + keywords', 'House rules + FAQ', 'Market Intel'], popular: false },
+              { plan: 'Pro', price: '99', tagline: 'Everything. Unlimited properties. No contracts.', features: ['Unlimited listings', 'All 18 OTA platforms', '10 headlines per platform', 'Full photo descriptions', 'Pricing intelligence', 'SEO + keywords', 'House rules + FAQ', 'Market Intel + Auditor', 'Version history + PDF export', 'Priority support'], off: [], popular: true },
             ].map(tier => (
               <div key={tier.plan} style={{
                 background: tier.popular ? 'linear-gradient(145deg, #1a1506 0%, #111 60%)' : '#111',
