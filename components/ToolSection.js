@@ -409,12 +409,23 @@ ${template}
         otas = batchResults.flatMap(r => r.otas || []);
       }
 
-      // Attach imageUrls to photos from scrapedImages
-      if (mainResult.photos && scrapedImages.length > 0) {
-        mainResult.photos = mainResult.photos.map((p, i) => ({
-          ...p,
-          imageUrl: p.imageUrl || scrapedImages[i] || null
-        }));
+      // Always attach scrapedImages to photos
+      if (scrapedImages.length > 0) {
+        if (!mainResult.photos || mainResult.photos.length === 0) {
+          // Create photo entries from scraped images
+          mainResult.photos = scrapedImages.slice(0, photoLimit).map((imgUrl, i) => ({
+            room: 'Photo ' + (i + 1),
+            emoji: '📸',
+            description: '',
+            imageUrl: imgUrl
+          }));
+        } else {
+          // Attach images to existing photo descriptions
+          mainResult.photos = mainResult.photos.map((p, i) => ({
+            ...p,
+            imageUrl: p.imageUrl || scrapedImages[i] || null
+          }));
+        }
       }
       setResult({ ...mainResult, otas, scrapedImages });
       setActiveTab(selectedFeatures.has('ota') ? 'ota' : [...selectedFeatures][0]);
