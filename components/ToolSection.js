@@ -45,27 +45,29 @@ const FEATURES = [
   { id: 'audit', icon: '🩺', name: 'Listing Auditor', desc: 'Health score & fix suggestions' },
 ];
 
-async function callAI(messages, maxTokens = 6000) {
+async function callAI(messages, maxTokens = 4000) {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: maxTokens, messages }),
   });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
+  if (!res.ok) throw new Error('API error ' + res.status);
   const data = await res.json();
   if (data.error) throw new Error(data.error.message || 'API error');
   const text = (data.content || []).map(b => b.text || '').join('').trim();
 
-  // Robust JSON extraction
-  for (const strategy of [
-    t => JSON.parse(t),
-    t => JSON.parse(t.substring(t.indexOf('{'), t.lastIndexOf('}') + 1)),
-    t => JSON.parse(t.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()),
-    t => { const m = t.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : null; },
-  ]) {
-    try { const r = strategy(text); if (r) return r; } catch {}
+  // Try multiple JSON extraction strategies
+  const tries = [
+    () => JSON.parse(text),
+    () => JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}')+1)),
+    () => JSON.parse(text.replace(/^[^{]*/s,'').replace(/[^}]*$/s,'')),
+    () => { const m = text.match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : null; },
+    () => JSON.parse(text.replace(/,([\s]*[}\]])/g,'$1')),
+  ];
+  for (const fn of tries) {
+    try { const r = fn(); if (r) return r; } catch {}
   }
-  throw new Error('Could not parse AI response. Please try again.');
+  throw new Error('Could not parse response. Try selecting fewer features or fewer platforms.');
 }
 
 export default function ToolSection() {
@@ -120,12 +122,12 @@ export default function ToolSection() {
         });
         const scraped = await scrapeRes.json();
         if (scraped.success && scraped.text) {
-          scrapedContext = `REAL WEBSITE DATA FROM ${url}:
+          const shortText = scraped.text.substring(0, 1500);
+          scrapedContext = `REAL LISTING DATA:
 Title: ${scraped.title}
 Description: ${scraped.metaDescription}
-Page Content: ${scraped.text}
-
-IMPORTANT: Use ONLY this real data. Do NOT make up property details.`;
+Content: ${shortText}
+USE THIS REAL DATA ONLY.`;
           scrapedImages = scraped.images || [];
         }
       } catch { /* scrape failed, continue */ }
@@ -139,24 +141,21 @@ IMPORTANT: Use ONLY this real data. Do NOT make up property details.`;
       const wantMarket = selectedFeatures.has('market');
       const wantOTA = selectedFeatures.has('ota') || selectedFeatures.has('otadesc');
 
-      const mainPrompt = `You are an expert vacation rental copywriter.
+      const mainPrompt = `You are a vacation rental copywriter. Extract real property info and generate content.
 ${scrapedContext}
 URL: ${url}
-
-Extract real property details and generate ONLY the requested sections.
-
-Return ONLY valid JSON starting with { and ending with }:
+Return ONLY valid JSON, no other text:
 {
   "property": {
-    "title": "exact property name from the listing",
-    "address": "exact city, state from the listing",
+    "title": "property name",
+    "address": "city, state",
     "type": "property type",
-    "bedrooms": 0,
-    "bathrooms": 0,
-    "guests": 0,
-    "sqft": 0,
-    "highlights": ["real highlight 1", "real highlight 2", "real highlight 3"],
-    "nearbyAttractions": ["real nearby place 1", "real nearby place 2", "real nearby place 3"]
+    "bedrooms": 3,
+    "bathrooms": 2,
+    "guests": 6,
+    "sqft": 1800,
+    "highlights": ["highlight1","highlight2","highlight3"],
+    "nearbyAttractions": ["nearby1","nearby2","nearby3"]
   }
   ${wantPhotos ? `,"photos": [
     {"room":"Living Room","emoji":"🛋️","description":"2-3 sentence description based on real listing"},
