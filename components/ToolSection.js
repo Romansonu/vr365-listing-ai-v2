@@ -684,12 +684,7 @@ Audit this listing and return ONLY valid JSON:
               <textarea
                 value={customPrompt}
                 onChange={e => setCustomPrompt(e.target.value)}
-                placeholder={'Examples:
-• Focus on the mountain views and outdoor spaces
-• Write in a luxury tone targeting high-end travelers
-• Emphasize pet friendly and kid friendly features
-• Target remote workers — highlight fast WiFi and workspace
-• Make the tone fun and casual'}
+                placeholder="Examples: Focus on outdoor spaces, Write in luxury tone, Target families with kids, Target remote workers, Make it fun and casual" 
                 style={{ width: '100%', padding: '12px 14px', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 8, fontFamily: 'inherit', fontSize: '0.85rem', outline: 'none', resize: 'vertical', minHeight: 100, color: '#1d1d1f', lineHeight: 1.6, background: 'white' }}
               />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
