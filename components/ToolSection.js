@@ -270,14 +270,38 @@ STRICT CHARACTER LIMITS — every headline MUST be within limit:
 ${limitsText}
 
 For each platform write 10 DIFFERENT headline variations. Each must be unique.
-Use nearby attractions and location keywords in headlines.
+CRITICAL CHARACTER RULES — MOST IMPORTANT INSTRUCTION:
+Every headline MUST use 95-100% of the platform character limit. Count every character.
+Here are the EXACT targets for each platform:
+- Airbnb (50): target 48-50 chars. Example: "Cedar & Sage · 6BR Mountain Retreat · Suncadia" = 47
+- VRBO (75): target 72-75 chars. Example: "Cedar & Sage | 6BR Suncadia Family Retreat | Pool, Hot Tub & Mountain Views" = 75
+- Booking.com (60): target 57-60 chars
+- TripAdvisor (80): target 76-80 chars
+- Google Vacation Rentals (100): target 95-100 chars
+- Hipcamp (60): target 57-60 chars
+- Expedia (120): target 114-120 chars
+- Hotels.com (100): target 95-100 chars
+- Agoda (80): target 76-80 chars
+- Kayak (90): target 85-90 chars
+- Homes & Villas by Marriott (100): target 95-100 chars
+- Plum Guide (60): target 57-60 chars
+- Houfy (75): target 72-75 chars
+- Vacasa (80): target 76-80 chars
+- Evolve (75): target 72-75 chars
+- Furnished Finder (80): target 76-80 chars
+- Glamping Hub (60): target 57-60 chars
+- Misterb&b (75): target 72-75 chars
+
+HOW TO HIT THE LIMIT: Combine property name + bedrooms + location + nearby attraction + key amenity + separator chars (· | -)
+If headline is too short: add more details like "Sleeps 8", "Hot Tub", "Game Room", "Near [attraction]", "Mountain Views", "Private Yard"
+NEVER submit a headline under 90% of the limit.
 
 Return ONLY valid JSON:
 {"otas": [
 ${template}
 ]}`;
 
-          return callAI([{ role: 'user', content: prompt }]);
+          return callAI([{ role: 'user', content: prompt }], 6000);
         });
 
         setLoadingStep('⚡ Generating all platforms in parallel...');
@@ -345,7 +369,25 @@ Audit this listing and return ONLY valid JSON:
     }
   };
 
-  const copy = (text) => navigator.clipboard.writeText(text);
+  const copy = (text, btn) => {
+    navigator.clipboard.writeText(text).then(() => {
+      if (btn) {
+        const orig = btn.textContent;
+        const origBg = btn.style.background;
+        const origColor = btn.style.color;
+        btn.textContent = '✓ Copied!';
+        btn.style.background = '#34c759';
+        btn.style.color = 'white';
+        btn.style.borderColor = '#34c759';
+        setTimeout(() => {
+          btn.textContent = orig;
+          btn.style.background = origBg;
+          btn.style.color = origColor;
+          btn.style.borderColor = '';
+        }, 2000);
+      }
+    });
+  };
 
   const s = {
     // Styles object
@@ -472,17 +514,40 @@ Audit this listing and return ONLY valid JSON:
         {result && (
           <div style={{ marginTop: 32 }}>
 
-            {/* Property Header */}
+            {/* Property Header - Editable */}
             <div style={{ background: '#1d1d1f', color: 'white', borderRadius: 12, padding: '32px 36px', marginBottom: 24 }}>
-              <h2 style={{ fontSize: '1.8rem', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 6 }}>{result.property?.title}</h2>
-              <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>{result.property?.address} · {result.property?.type}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {[`${result.property?.bedrooms} bed`, `${result.property?.bathrooms} bath`, `${result.property?.guests} guests`, ...(result.property?.highlights || []).slice(0, 2)].map((b, i) => (
-                  <span key={i} style={{ padding: '4px 12px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 500, background: i === 0 ? '#c9a84c' : 'rgba(255,255,255,0.1)', color: i === 0 ? '#000' : 'rgba(255,255,255,0.8)' }}>{b}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
+                <input
+                  defaultValue={result.property?.title}
+                  onChange={e => result.property.title = e.target.value}
+                  style={{ fontSize: '1.8rem', fontWeight: 800, letterSpacing: '-0.03em', background: 'transparent', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.2)', color: 'white', width: '100%', outline: 'none', fontFamily: 'inherit' }}
+                />
+              </div>
+              <input
+                defaultValue={result.property?.address}
+                onChange={e => result.property.address = e.target.value}
+                style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginBottom: 16, background: 'transparent', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.1)', outline: 'none', fontFamily: 'inherit', width: '100%' }}
+              />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
+                {[
+                  { label: 'Bedrooms', key: 'bedrooms', suffix: 'bed' },
+                  { label: 'Bathrooms', key: 'bathrooms', suffix: 'bath' },
+                  { label: 'Guests', key: 'guests', suffix: 'guests' },
+                  { label: 'Sqft', key: 'sqft', suffix: 'sqft' },
+                ].map((f, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, background: i === 0 ? '#c9a84c' : 'rgba(255,255,255,0.1)', borderRadius: 4, padding: '4px 10px' }}>
+                    <input
+                      defaultValue={result.property?.[f.key] || '—'}
+                      onChange={e => result.property[f.key] = e.target.value}
+                      style={{ width: 36, background: 'transparent', border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: '0.75rem', fontWeight: 600, color: i === 0 ? '#000' : 'white', textAlign: 'center' }}
+                    />
+                    <span style={{ fontSize: '0.72rem', fontWeight: 500, color: i === 0 ? '#000' : 'rgba(255,255,255,0.7)' }}>{f.suffix}</span>
+                  </div>
                 ))}
               </div>
+              <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', marginBottom: 12 }}>✏️ Click any field above to edit</div>
               {result.property?.nearbyAttractions?.length > 0 && (
-                <div style={{ marginTop: 14 }}>
+                <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 2, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>📍 Nearby used in headlines</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {result.property.nearbyAttractions.map((a, i) => (
@@ -543,13 +608,13 @@ Audit this listing and return ONLY valid JSON:
                                     <div style={{ height: '100%', width: `${Math.min(100, (len / limit) * 100)}%`, background: cc, borderRadius: 2 }} />
                                   </div>
                                   <span style={{ fontSize: '0.65rem', fontWeight: 700, color: cc }}>{len}/{limit}</span>
-                                  <button onClick={() => copy(h)} style={{ padding: '2px 8px', border: '1px solid rgba(0,0,0,0.1)', background: 'white', borderRadius: 4, fontFamily: 'inherit', fontSize: '0.68rem', cursor: 'pointer' }}>Copy</button>
+                                  <button onClick={e => copy(h, e.target)} style={{ padding: '2px 8px', border: '1px solid rgba(0,0,0,0.1)', background: 'white', borderRadius: 4, fontFamily: 'inherit', fontSize: '0.68rem', cursor: 'pointer' }}>Copy</button>
                                 </div>
                               </div>
                             );
                           })}
                           {headlines.length > 0 && (
-                            <button onClick={() => copy(headlines.map((h, i) => `${i + 1}. ${h}`).join('\n'))}
+                            <button onClick={e => copy(headlines.map((h, i) => `${i + 1}. ${h}`).join('\n'), e.target)}
                               style={{ width: '100%', padding: '8px', border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', marginTop: 4 }}>
                               Copy all {headlines.length} headlines
                             </button>
@@ -578,7 +643,7 @@ Audit this listing and return ONLY valid JSON:
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
                         {(ota.tags || []).map((t, i) => <span key={i} style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: 20, background: '#f5f5f7', color: '#6e6e73' }}>{t}</span>)}
                       </div>
-                      <button onClick={() => copy(`${ota.shortDesc}\n\n${ota.fullBody}`)}
+                      <button onClick={e => copy(`${ota.shortDesc}\n\n${ota.fullBody}`, e.target)}
                         style={{ width: '100%', padding: 9, border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
                         Copy description
                       </button>
@@ -601,7 +666,7 @@ Audit this listing and return ONLY valid JSON:
                     <div style={{ padding: '14px 16px' }}>
                       <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1.5, fontWeight: 700, color: '#c9a84c', marginBottom: 5 }}>{p.room}</div>
                       <textarea defaultValue={p.description} style={{ ...s.textarea, minHeight: 70, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 6, padding: 8, marginBottom: 8, fontSize: '0.8rem', color: '#6e6e73' }} />
-                      <button onClick={() => copy(p.description)} style={{ width: '100%', padding: 8, border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>Copy description</button>
+                      <button onClick={e => copy(p.description, e.target)} style={{ width: '100%', padding: 8, border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>Copy description</button>
                     </div>
                   </div>
                 ))}
@@ -649,7 +714,7 @@ Audit this listing and return ONLY valid JSON:
                       <span style={{ flexShrink: 0 }}>{r.icon}</span><span>{r.rule}</span>
                     </div>
                   ))}
-                  <button onClick={() => copy((result.rules.items || []).map(r => `${r.icon} ${r.rule}`).join('\n'))}
+                  <button onClick={e => copy((result.rules.items || []).map(r => `${r.icon} ${r.rule}`).join('\n'), e.target)}
                     style={{ width: '100%', padding: 9, border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', marginTop: 14 }}>
                     Copy all rules
                   </button>
@@ -662,7 +727,7 @@ Audit this listing and return ONLY valid JSON:
                       <div style={{ fontSize: '0.8rem', color: '#6e6e73', lineHeight: 1.6 }}>{f.a}</div>
                     </div>
                   ))}
-                  <button onClick={() => copy((result.rules.faq || []).map(f => `Q: ${f.q}\nA: ${f.a}`).join('\n\n'))}
+                  <button onClick={e => copy((result.rules.faq || []).map(f => `Q: ${f.q}\nA: ${f.a}`).join('\n\n'), e.target)}
                     style={{ width: '100%', padding: 9, border: '1px solid rgba(0,0,0,0.1)', background: '#f5f5f7', borderRadius: 6, fontFamily: 'inherit', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', marginTop: 14 }}>
                     Copy all FAQ
                   </button>
