@@ -69,6 +69,8 @@ async function callAI(messages, maxTokens = 4000) {
   throw new Error('Could not parse AI response. Please try again or select fewer options.');
 }
 
+const proxyImg = (url) => url ? `/api/image?url=${encodeURIComponent(url)}` : null;
+
 export default function ToolSection() {
   const [url, setUrl] = useState('');
   const [selectedFeatures, setSelectedFeatures] = useState(new Set());
@@ -139,6 +141,10 @@ export default function ToolSection() {
             const shortText = scraped.text.substring(0, 1500);
                         scrapedContext = 'REAL LISTING DATA:\nTitle: ' + scraped.title + '\nDescription: ' + scraped.metaDescription + '\nContent: ' + shortText + '\nUSE THIS REAL DATA ONLY.';
             scrapedImages = scraped.images || [];
+            console.log('Scraped images count:', scrapedImages.length, scrapedImages.slice(0,3));
+            setLoadingStep('🔍 Found ' + scrapedImages.length + ' images...');
+          } else {
+            console.log('Scrape failed or no text:', scraped);
           }
         } catch { /* scrape failed, continue */ }
       }
@@ -908,7 +914,7 @@ Audit this listing and return ONLY valid JSON:
                   <div key={i} style={{ background: 'white', border: '1px solid rgba(0,0,0,0.1)', borderRadius: 10, overflow: 'hidden' }}>
                     {(p.imageUrl || result.scrapedImages?.[i]) ? (
                       <img 
-                        src={p.imageUrl || result.scrapedImages[i]} 
+                        src={proxyImg(p.imageUrl || result.scrapedImages?.[i])} 
                         alt={p.room} 
                         style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} 
                         onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
