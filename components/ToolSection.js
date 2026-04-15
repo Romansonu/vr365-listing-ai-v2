@@ -66,7 +66,7 @@ async function callAI(messages, maxTokens = 4000) {
   for (const fn of tries) {
     try { const r = fn(); if (r) return r; } catch {}
   }
-  throw new Error('Could not parse response. Try selecting fewer features or fewer platforms.');
+  throw new Error('Could not parse AI response. Please try again or select fewer options.');
 }
 
 export default function ToolSection() {
@@ -274,7 +274,17 @@ Return ONLY valid JSON, no other text:
   }` : ''}
 }`;
 
-      const mainResult = await callAI([{ role: 'user', content: mainPrompt }]);
+      let mainResult = {};
+      try {
+        mainResult = await callAI([{ role: 'user', content: mainPrompt }]);
+      } catch(e) {
+        // If only photos selected, continue with empty property data
+        if (!wantOTA && !wantPricing && !wantRules && !wantSEO && !wantMarket) {
+          mainResult = { property: { title: 'Property', address: url, type: 'Vacation Rental', bedrooms: 0, bathrooms: 0, guests: 0, sqft: 0, highlights: [], nearbyAttractions: [] } };
+        } else {
+          throw e;
+        }
+      }
 
       // STEP 2.5: Analyze photos with Claude Vision
       if (wantPhotos && photoBase64List.some(p => p.base64)) {
@@ -320,7 +330,16 @@ Return ONLY valid JSON, no other text:
             mainResult.photos = allPhotos;
           }
         } catch(e) {
-          console.log('Vision analysis failed, using text-based descriptions');
+          console.log('Vision analysis failed:', e.message);
+          // Fall back to scraped images with generic descriptions
+          if (scrapedImages.length > 0) {
+            mainResult.photos = scrapedImages.slice(0, photoLimit).map((imgUrl, i) => ({
+              room: 'Photo ' + (i + 1),
+              emoji: '📸',
+              description: 'Property photo ' + (i + 1),
+              imageUrl: imgUrl
+            }));
+          }
         }
       }
 
