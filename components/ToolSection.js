@@ -124,15 +124,7 @@ export default function ToolSection() {
 
       if (inputMode === 'manual') {
         // Build context from manual entry
-        scrapedContext = `PROPERTY DATA ENTERED BY USER:
-Name: ${manualData.title}
-Location: ${manualData.address}
-Type: ${manualData.type}
-Bedrooms: ${manualData.bedrooms}, Bathrooms: ${manualData.bathrooms}, Guests: ${manualData.guests}, Sqft: ${manualData.sqft}
-Amenities: ${manualData.amenities}
-Nearby Attractions: ${manualData.nearbyAttractions}
-Existing Description: ${manualData.description}
-USE ONLY THIS DATA. Do not make up additional details.`;
+                scrapedContext = 'PROPERTY DATA ENTERED BY USER:\nName: ' + manualData.title + '\nLocation: ' + manualData.address + '\nType: ' + manualData.type + '\nBedrooms: ' + manualData.bedrooms + ', Bathrooms: ' + manualData.bathrooms + ', Guests: ' + manualData.guests + '\nAmenities: ' + manualData.amenities + '\nNearby: ' + manualData.nearbyAttractions + '\nDescription: ' + manualData.description + '\nUSE ONLY THIS DATA.';
         setLoadingStep('📝 Using manual property data...');
       } else {
         setLoadingStep('🔍 Scanning website...');
@@ -145,11 +137,7 @@ USE ONLY THIS DATA. Do not make up additional details.`;
           const scraped = await scrapeRes.json();
           if (scraped.success && scraped.text) {
             const shortText = scraped.text.substring(0, 1500);
-            scrapedContext = `REAL LISTING DATA:
-Title: ${scraped.title}
-Description: ${scraped.metaDescription}
-Content: ${shortText}
-USE THIS REAL DATA ONLY.`;
+                        scrapedContext = 'REAL LISTING DATA:\nTitle: ' + scraped.title + '\nDescription: ' + scraped.metaDescription + '\nContent: ' + shortText + '\nUSE THIS REAL DATA ONLY.';
             scrapedImages = scraped.images || [];
           }
         } catch { /* scrape failed, continue */ }
@@ -188,10 +176,7 @@ USE THIS REAL DATA ONLY.`;
       const wantMarket = selectedFeatures.has('market');
       const wantOTA = selectedFeatures.has('ota') || selectedFeatures.has('otadesc');
 
-      const customInstructions = customPrompt ? `
-
-SPECIAL INSTRUCTIONS FROM USER: ${customPrompt}
-Follow these instructions throughout all generated content.` : '';
+            const customInstructions = customPrompt ? '\n\nSPECIAL INSTRUCTIONS: ' + customPrompt : '';
 
       const mainPrompt = `You are a vacation rental copywriter. Extract real property info and generate content.
 ${scrapedContext}
@@ -345,11 +330,7 @@ Return ONLY valid JSON, no other text:
         setLoadingStep('✍️ Writing platform copy...');
         const otaList = [...selectedOTAs];
         const nearby = (mainResult.property?.nearbyAttractions || []).join(', ');
-        const propInfo = `Property: ${mainResult.property?.title || 'Vacation Rental'}
-Location: ${mainResult.property?.address || url}
-Type: ${mainResult.property?.type || 'vacation rental'}, ${mainResult.property?.bedrooms || 0} bedrooms, ${mainResult.property?.guests || 0} guests
-Nearby attractions: ${nearby || 'local area attractions'}
-${scrapedContext ? 'Use the real property data from the scraped listing.' : ''}`;
+            const propInfo = 'Property: ' + (mainResult.property?.title || 'Vacation Rental') + '\nLocation: ' + (mainResult.property?.address || url) + '\nType: ' + (mainResult.property?.type || 'vacation rental') + ', ' + (mainResult.property?.bedrooms || 0) + ' bedrooms, ' + (mainResult.property?.guests || 0) + ' guests\nNearby attractions: ' + nearby + (scrapedContext ? '\nUse the real property data.' : '') + (customPrompt ? '\nSPECIAL INSTRUCTIONS: ' + customPrompt : '');
 
         const batchSize = 5;
         const batches = [];
